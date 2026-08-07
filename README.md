@@ -24,7 +24,7 @@ flowchart TB
     EKS --> NR[New Relic nri-bundle]
 ```
 
-## Tecnologias planejadas
+## Tecnologias
 
 - Terraform e HCP Terraform;
 - AWS VPC, EKS e Load Balancer;
@@ -34,13 +34,22 @@ flowchart TB
 
 ## Validação
 
-A infraestrutura será implementada na Semana 2. O CI inicial protege a documentação e será ampliado com `terraform fmt`, `validate`, TFLint e análise de segurança.
+```bash
+terraform fmt -check -recursive
+terraform init -backend=false -input=false
+terraform validate
+```
+
+O CI também executa TFLint, Trivy e Gitleaks. O plan real é manual e utiliza HCP Terraform; nenhum workflow executa apply automático.
 
 ## Documentação
 
 - [Arquitetura](docs/architecture.md)
 - [AWS Academy](docs/aws-academy.md)
 - [New Relic no Kubernetes](docs/new-relic.md)
+- [HCP Terraform e execução](docs/hcp-terraform.md)
+- [Add-ons e escalabilidade](docs/kubernetes-addons.md)
+- [Validação](docs/validation.md)
 - [Repositórios da solução](docs/repositories.md)
 
 ## Contribuição
