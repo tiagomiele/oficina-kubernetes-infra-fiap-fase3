@@ -83,7 +83,7 @@ variable "lab_role_arn" {
 variable "cluster_version" {
   description = "Versão do Kubernetes disponível no AWS Academy."
   type        = string
-  default     = "1.31"
+  default     = "1.34"
 }
 
 variable "cluster_public_access_cidrs" {
