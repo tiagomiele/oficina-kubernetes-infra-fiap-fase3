@@ -45,7 +45,7 @@ resource "newrelic_one_dashboard" "oficina" {
 
       nrql_query {
         account_id = var.newrelic_account_id
-        query      = "SELECT average(duracaoSegundos) FROM OrdemServicoStatusAlterado WHERE ${local.business_filter} AND statusAnterior IN ('EM_DIAGNOSTICO', 'EM_EXECUCAO', 'AGUARDANDO_RETIRADA') FACET statusAnterior SINCE 7 days ago"
+        query      = "SELECT average(duracaoMilissegundos) / 1000 AS 'segundos' FROM OrdemServicoStatusAlterado WHERE ${local.business_filter} AND statusAnterior IN ('EM_DIAGNOSTICO', 'EM_EXECUCAO', 'AGUARDANDO_PAGAMENTO') FACET statusAnterior SINCE 7 days ago"
       }
     }
 
@@ -58,7 +58,7 @@ resource "newrelic_one_dashboard" "oficina" {
 
       nrql_query {
         account_id = var.newrelic_account_id
-        query      = "SELECT count(*) FROM OrdemServicoStatusAlterado WHERE ${local.business_filter} FACET statusAnterior, statusNovo TIMESERIES 1 day SINCE 7 days ago"
+        query      = "SELECT count(*) FROM OrdemServicoStatusAlterado WHERE ${local.business_filter} FACET statusAnterior, novoStatus TIMESERIES 1 day SINCE 7 days ago"
       }
     }
 

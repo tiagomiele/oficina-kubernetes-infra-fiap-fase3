@@ -66,8 +66,8 @@ Sobrescreva com `alert_thresholds` no workspace quando necessário.
 |---|---|
 | OS criadas (24h) | `SELECT count(*) FROM OrdemServicoCriada WHERE environment = '<env>' SINCE 24 hours ago` |
 | Volume diário | `SELECT count(*) FROM OrdemServicoCriada ... TIMESERIES 1 day SINCE 14 days ago` |
-| Tempo médio por etapa | `SELECT average(duracaoSegundos) FROM OrdemServicoStatusAlterado WHERE statusAnterior IN ('EM_DIAGNOSTICO', 'EM_EXECUCAO', 'AGUARDANDO_RETIRADA') FACET statusAnterior` |
-| Transições de status | `SELECT count(*) FROM OrdemServicoStatusAlterado FACET statusAnterior, statusNovo TIMESERIES 1 day` |
+| Tempo médio por etapa | `SELECT average(duracaoMilissegundos) / 1000 FROM OrdemServicoStatusAlterado WHERE statusAnterior IN ('EM_DIAGNOSTICO', 'EM_EXECUCAO', 'AGUARDANDO_PAGAMENTO') FACET statusAnterior` |
+| Transições de status | `SELECT count(*) FROM OrdemServicoStatusAlterado FACET statusAnterior, novoStatus TIMESERIES 1 day` |
 | Falhas de processamento | `SELECT count(*) FROM OrdemServicoProcessamentoFalhou FACET codigoErro TIMESERIES` |
 | Falhas de integração | `SELECT count(*) FROM IntegracaoExternaFalhou FACET operacao, codigoErro` |
 
