@@ -1,0 +1,263 @@
+name: Deploy
+
+# Deploy manual e escalonado. Cada etapa exige uma flag explícita e a aprovação
+# do GitHub Environment correspondente (homolog ou production).
+#
+# Ordem segura: infraestrutura -> add-ons do cluster -> observabilidade.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente alvo
+        required: true
+        default: homolog
+        type: choice
+        options:
+          - homolog
+          - production
+      apply_infrastructure:
+        description: Executar terraform apply da rede e do EKS
+        required: true
+        default: false
+        type: boolean
+      deploy_addons:
+        description: Instalar Metrics Server e nri-bundle no cluster
+        required: true
+        default: false
+        type: boolean
+      apply_observability:
+        description: Executar terraform apply dos dashboards e alertas New Relic
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  AWS_DEFAULT_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+  KUBECTL_VERSION: v1.34.1
+  HELM_VERSION: v3.18.4
+
+jobs:
+  guard:
+    name: Pré-requisitos (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    outputs:
+      cluster_name: ${{ steps.context.outputs.cluster_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rejeitar branch incompatível com o ambiente
+        run: |
+          branch="${GITHUB_REF_NAME}"
+          environment="${{ inputs.environment }}"
+          if [ "${environment}" = "production" ] && [ "${branch}" != "main" ]; then
+            echo "::error::production só pode ser implantado a partir de main."
+            exit 1
+          fi
+          if [ "${environment}" = "homolog" ] && [ "${branch}" != "homolog" ]; then
+            echo "::error::homolog só pode ser implantado a partir de homolog."
+            exit 1
+          fi
+
+      - name: Exigir ao menos uma etapa habilitada
+        run: |
+          if [ "${{ inputs.apply_infrastructure }}" != "true" ] &&
+            [ "${{ inputs.deploy_addons }}" != "true" ] &&
+            [ "${{ inputs.apply_observability }}" != "true" ]; then
+            echo "::error::Nenhuma etapa habilitada. Marque explicitamente o que deve ser executado."
+            exit 1
+          fi
+
+      - name: Validar sessão AWS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+        run: ./scripts/check-aws-session.sh
+
+      - name: Contexto do deploy
+        id: context
+        run: |
+          cluster="${{ vars.CLUSTER_NAME }}"
+          if [ -z "${cluster}" ]; then
+            cluster="oficina-${{ inputs.environment }}"
+          fi
+          echo "cluster_name=${cluster}" >>"$GITHUB_OUTPUT"
+          {
+            echo "## Deploy ${{ inputs.environment }}"
+            echo
+            echo "| Etapa | Habilitada |"
+            echo "|---|---|"
+            echo "| Infraestrutura (EKS) | ${{ inputs.apply_infrastructure }} |"
+            echo "| Add-ons do cluster | ${{ inputs.deploy_addons }} |"
+            echo "| Observabilidade New Relic | ${{ inputs.apply_observability }} |"
+            echo
+            echo "- cluster: ${cluster}"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  infrastructure:
+    name: Terraform apply da infraestrutura
+    needs: guard
+    if: inputs.apply_infrastructure
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
+      TF_WORKSPACE: ${{ inputs.environment == 'homolog' && vars.TF_WORKSPACE_HOMOLOG || vars.TF_WORKSPACE_PRODUCTION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Validar workspace
+        run: |
+          test -n "$TF_CLOUD_ORGANIZATION"
+          test -n "$TF_WORKSPACE"
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform plan
+        run: terraform plan -input=false -no-color
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve -no-color
+
+      - name: Resumo dos outputs
+        run: |
+          {
+            echo "## Infraestrutura aplicada"
+            echo
+            echo '```text'
+            terraform output -no-color eks_cluster_name
+            terraform output -no-color kubectl_config_command
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  addons:
+    name: Metrics Server e nri-bundle
+    needs: [guard, infrastructure]
+    if: always() && inputs.deploy_addons && needs.guard.result == 'success' && needs.infrastructure.result != 'failure'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      CLUSTER_NAME: ${{ needs.guard.outputs.cluster_name }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl compatível com o EKS 1.34
+        uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Validar sessão AWS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+        run: ./scripts/check-aws-session.sh
+
+      - name: Exigir license key
+        env:
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+        run: |
+          if [ -z "${NEW_RELIC_LICENSE_KEY}" ]; then
+            echo "::error::Secret NEW_RELIC_LICENSE_KEY ausente no GitHub Environment ${{ inputs.environment }}."
+            exit 1
+          fi
+
+      - name: Deploy dos add-ons
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+        run: ./scripts/deploy-cluster-addons.sh
+
+      - name: Verificar rollout e reportar
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          APP_NAMESPACE: ${{ vars.APP_NAMESPACE || 'oficina' }}
+        run: ./scripts/verify-cluster-addons.sh
+
+  observability:
+    name: Terraform apply da observabilidade New Relic
+    needs: [guard, infrastructure, addons]
+    if: always() && inputs.apply_observability && needs.guard.result == 'success' && needs.infrastructure.result != 'failure' && needs.addons.result != 'failure'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    env:
+      TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
+      TF_WORKSPACE: ${{ inputs.environment == 'homolog' && vars.TF_WORKSPACE_OBSERVABILITY_HOMOLOG || vars.TF_WORKSPACE_OBSERVABILITY_PRODUCTION }}
+      TF_VAR_newrelic_api_key: ${{ secrets.NEW_RELIC_API_KEY }}
+      TF_VAR_newrelic_account_id: ${{ vars.NEW_RELIC_ACCOUNT_ID }}
+      TF_VAR_environment: ${{ inputs.environment }}
+      TF_VAR_cluster_name: ${{ needs.guard.outputs.cluster_name }}
+      TF_VAR_health_check_url: ${{ vars.HEALTH_CHECK_URL }}
+      TF_VAR_synthetic_monitor_enabled: ${{ vars.SYNTHETIC_MONITOR_ENABLED || 'false' }}
+    defaults:
+      run:
+        working-directory: observability/newrelic
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Validar credenciais New Relic
+        run: |
+          test -n "$TF_CLOUD_ORGANIZATION" || {
+            echo "::error::TF_CLOUD_ORGANIZATION não configurada."
+            exit 1
+          }
+          test -n "$TF_WORKSPACE" || {
+            echo "::error::Workspace de observabilidade não configurado."
+            exit 1
+          }
+          if [ -z "$TF_VAR_newrelic_api_key" ] || [ -z "$TF_VAR_newrelic_account_id" ]; then
+            echo "::error::Configure o secret NEW_RELIC_API_KEY e a variable NEW_RELIC_ACCOUNT_ID no GitHub Environment."
+            exit 1
+          fi
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform plan
+        run: terraform plan -input=false -no-color
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve -no-color
+
+      - name: Resumo da observabilidade
+        run: |
+          {
+            echo "## Observabilidade aplicada"
+            echo
+            echo '```text'
+            terraform output -no-color alert_condition_names
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
