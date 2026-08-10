@@ -33,7 +33,7 @@ Tudo é condicional:
 | `environment` | `homolog` ou `production` | define limiares e nomes |
 | `cluster_name` | saída `eks_cluster_name` da infraestrutura | vazio usa `oficina-<environment>` |
 | `apm_application_name` | nome da aplicação no APM | vazio usa `oficina-backend-<environment>` |
-| `kubernetes_namespace` / `kubernetes_deployment_name` | `oficina` / `oficina-app` | usados nas consultas de Kubernetes |
+| `kubernetes_namespace` / `kubernetes_deployment_name` | `oficina-homolog` ou `oficina-production` / `oficina-app` | usados nas consultas de Kubernetes |
 | `lambda_function_names` / `api_gateway_name` | repositório de autenticação | vazio usa `oficina-<environment>-login`, `-authorizer` e `-http-api` |
 | `health_check_url` | URL pública do LoadBalancer | vazia desabilita o monitor sintético |
 | `alert_thresholds` | mapa por ambiente | limiares configuráveis |

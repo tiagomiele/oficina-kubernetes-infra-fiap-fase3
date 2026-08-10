@@ -13,7 +13,7 @@ observability_enabled = true
 
 cluster_name               = "oficina-homolog"
 apm_application_name       = "oficina-backend-homolog"
-kubernetes_namespace       = "oficina"
+kubernetes_namespace       = "oficina-homolog"
 kubernetes_deployment_name = "oficina-app"
 
 api_gateway_name      = "oficina-homolog-http-api"

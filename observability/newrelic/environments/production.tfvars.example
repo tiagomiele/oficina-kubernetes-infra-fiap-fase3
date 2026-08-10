@@ -11,7 +11,7 @@ observability_enabled = true
 
 cluster_name               = "oficina-production"
 apm_application_name       = "oficina-backend-production"
-kubernetes_namespace       = "oficina"
+kubernetes_namespace       = "oficina-production"
 kubernetes_deployment_name = "oficina-app"
 
 api_gateway_name      = "oficina-production-http-api"
