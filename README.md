@@ -1,14 +1,16 @@
 # Oficina Kubernetes Infrastructure — Fase 3
 
-Infraestrutura como código do ambiente Kubernetes da oficina mecânica na AWS Academy.
+Infraestrutura como código do ambiente Kubernetes e da observabilidade da
+oficina mecânica na AWS Academy.
 
 ## Responsabilidades
 
 - VPC, subnets, rotas, Internet Gateway e NAT Gateway;
-- Amazon EKS e node groups;
+- Amazon EKS 1.34 e node groups;
 - Load Balancer e conectividade privada;
-- namespaces, escalabilidade e HPA;
-- integração Kubernetes do New Relic;
+- Metrics Server e suporte ao HPA da aplicação;
+- integração Kubernetes do New Relic (`nri-bundle`);
+- dashboards, alertas e monitor sintético do New Relic como código;
 - outputs de rede consumidos pelos outros repositórios.
 
 Não contém aplicação Spring Boot, Lambda, schema ou provisionamento do RDS.
@@ -18,37 +20,86 @@ Não contém aplicação Spring Boot, Lambda, schema ou provisionamento do RDS.
 ```mermaid
 flowchart TB
     APIGW[API Gateway] --> LB[Load Balancer]
-    LB --> EKS[Amazon EKS]
+    LB --> EKS[Amazon EKS 1.34]
     EKS --> Pods[Pods da aplicação]
-    HPA[HPA] --> Pods
-    EKS --> NR[New Relic nri-bundle]
+    HPA[HPA CPU/memória] --> Pods
+    MS[Metrics Server] --> HPA
+    EKS --> NR[nri-bundle no namespace newrelic]
+    NR --> NRP[(New Relic)]
+    TF[Terraform provider newrelic] --> NRP
 ```
+
+Diagrama detalhado da camada de infraestrutura e observabilidade em
+`docs/diagrams/infrastructure-observability.mmd`.
+
+## Estrutura
+
+| Caminho | Conteúdo |
+|---|---|
+| `network.tf`, `eks.tf`, `variables.tf`, `outputs.tf` | rede, EKS 1.34 e add-ons gerenciados |
+| `environments/*.tfvars.example` | exemplos de variáveis por ambiente |
+| `kubernetes/addons/` | values dos charts e versões fixadas |
+| `scripts/` | validação de sessão AWS, deploy, verificação e lint offline |
+| `observability/newrelic/` | dashboards, alertas, sintético e notificações |
+| `.github/workflows/` | CI, plan manual e deploy com gates |
 
 ## Tecnologias
 
-- Terraform e HCP Terraform;
-- AWS VPC, EKS e Load Balancer;
-- Kubernetes e Helm;
-- New Relic `nri-bundle`;
-- GitHub Actions.
+- Terraform `>= 1.6, < 2.0` e HCP Terraform (workspaces separados por ambiente);
+- AWS VPC, EKS 1.34 e Load Balancer;
+- Kubernetes, Helm, Metrics Server e HPA;
+- New Relic `nri-bundle` `8.0.10` e provider Terraform `newrelic` `~> 3.95.0`;
+- GitHub Actions com GitHub Environments.
 
-## Validação
+## Segredos
+
+Nenhuma credencial é versionada. Por GitHub Environment (`homolog` e
+`production`):
+
+- secrets: `TF_API_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+  `AWS_SESSION_TOKEN`, `NEW_RELIC_LICENSE_KEY`, `NEW_RELIC_API_KEY`;
+- variables: `TF_CLOUD_ORGANIZATION`, `TF_WORKSPACE_HOMOLOG`,
+  `TF_WORKSPACE_PRODUCTION`, `TF_WORKSPACE_OBSERVABILITY_HOMOLOG`,
+  `TF_WORKSPACE_OBSERVABILITY_PRODUCTION`, `NEW_RELIC_ACCOUNT_ID` e, quando
+  necessário, `AWS_REGION`, `CLUSTER_NAME`, `APP_NAMESPACE`,
+  `HEALTH_CHECK_URL`, `SYNTHETIC_MONITOR_ENABLED`.
+
+A license key do New Relic só existe como secret do GitHub Environment e como
+Secret Kubernetes `newrelic-license` (chave `licenseKey`, namespace `newrelic`),
+criado no momento do deploy e referenciado por `global.customSecretName`.
+
+## Validação gratuita
 
 ```bash
 terraform fmt -check -recursive
-terraform init -backend=false -input=false
+terraform init -backend=false -input=false -lockfile=readonly
 terraform validate
+
+cd observability/newrelic && terraform init -backend=false -lockfile=readonly && terraform validate && cd -
+
+./scripts/lint-cluster-addons.sh
+yamllint -c .yamllint.yml kubernetes .github/workflows
+shellcheck scripts/*.sh
 ```
 
-O CI também executa TFLint, Trivy e Gitleaks. O plan real é manual e utiliza HCP Terraform; nenhum workflow executa apply automático.
+O CI executa essas validações, TFLint, Trivy e Gitleaks. Nenhum workflow
+executa apply automático.
+
+## Deploy
+
+O workflow manual `Deploy` respeita a ordem infraestrutura → add-ons →
+observabilidade, exige flag explícita por etapa e aprovação do GitHub
+Environment. Detalhes em [Deploy, rollback e troubleshooting](docs/deployment.md).
 
 ## Documentação
 
 - [Arquitetura](docs/architecture.md)
 - [AWS Academy](docs/aws-academy.md)
 - [New Relic no Kubernetes](docs/new-relic.md)
-- [HCP Terraform e execução](docs/hcp-terraform.md)
+- [Observabilidade como código](docs/observability-as-code.md)
 - [Add-ons e escalabilidade](docs/kubernetes-addons.md)
+- [Deploy, rollback e troubleshooting](docs/deployment.md)
+- [HCP Terraform e execução](docs/hcp-terraform.md)
 - [Validação](docs/validation.md)
 - [Repositórios da solução](docs/repositories.md)
 

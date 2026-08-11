@@ -5,12 +5,12 @@ output "vpc_id" {
 
 output "public_subnet_ids" {
   description = "IDs das subnets públicas ordenadas por zona."
-  value       = [for zone in var.availability_zones : aws_subnet.public[zone].id]
+  value       = [for subnet in values(aws_subnet.public) : subnet.id]
 }
 
 output "private_subnet_ids" {
   description = "IDs das subnets privadas ordenadas por zona."
-  value       = [for zone in var.availability_zones : aws_subnet.private[zone].id]
+  value       = [for subnet in values(aws_subnet.private) : subnet.id]
 }
 
 output "eks_cluster_name" {
