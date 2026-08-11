@@ -1,8 +1,6 @@
 aws_region  = "us-west-2"
 environment = "production"
 
-lab_role_arn = "arn:aws:iam::ACCOUNT_ID:role/LabRole"
-
 vpc_cidr             = "10.1.0.0/16"
 availability_zones    = ["us-west-2a", "us-west-2b"]
 public_subnet_cidrs   = ["10.1.0.0/24", "10.1.1.0/24"]

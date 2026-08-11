@@ -21,43 +21,21 @@ Cada workspace mantém state próprio. Não reutilize o state combinado da Fase 
 
 ## Variáveis do HCP Terraform
 
-Cadastre como variáveis de ambiente sensíveis e renove a cada sessão do Learner Lab:
+Não copie credenciais ou o ARN da `LabRole` manualmente. Execute no repositório do backend:
 
-```text
-AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY
-AWS_SESSION_TOKEN
+```powershell
+.\scripts\configure-environment.ps1 -Environment homolog
 ```
 
-Cadastre como variáveis Terraform:
+O script cria o Variable Set compartilhado `aws-academy-credentials`, associa homologação e produção, remove credenciais diretas conflitantes e mantém apenas `environment` por workspace. Região e versão do EKS usam defaults; o ARN da `LabRole` é derivado da conta autenticada com `aws_caller_identity`.
 
-```text
-aws_region = "us-west-2"
-environment = "homolog" ou "production"
-lab_role_arn = "arn:aws:iam::<conta>:role/LabRole"
-```
+Restrinja `cluster_public_access_cidrs` para o IP público do operador em `/32` quando possível.
 
-As demais variáveis possuem defaults compatíveis com o laboratório. Restrinja `cluster_public_access_cidrs` para o IP público do operador em `/32` quando possível.
-
-Nos workspaces de observabilidade, cadastre `newrelic_account_id`,
-`environment`, `cluster_name` e a variável sensível `newrelic_api_key` (ou a
-variável de ambiente `NEW_RELIC_API_KEY`). A license key do cluster **não** é
-cadastrada aqui: ela existe apenas como secret do GitHub Environment e como
-Secret Kubernetes.
+Para os workspaces de observabilidade, execute o mesmo script com `-ConfigureNewRelic`. A License key permanece somente no GitHub Environment e no Secret Kubernetes.
 
 ## Integração com GitHub Actions
 
-Em cada GitHub Environment (`homolog` e `production`), configure:
-
-- secret `TF_API_TOKEN`;
-- variable `TF_CLOUD_ORGANIZATION`;
-- variable `TF_WORKSPACE_HOMOLOG`;
-- variable `TF_WORKSPACE_PRODUCTION`;
-- variable `TF_WORKSPACE_OBSERVABILITY_HOMOLOG`;
-- variable `TF_WORKSPACE_OBSERVABILITY_PRODUCTION`.
-
-A lista completa de secrets e variables está em
-[Deploy, rollback e troubleshooting](deployment.md).
+O script central cria e atualiza os GitHub Environments `homolog` e `production`, incluindo token HCP, credenciais AWS, workspaces e nomes de cluster. A lista completa está em [Deploy, rollback e troubleshooting](deployment.md).
 
 O workflow **Terraform plan** é manual. Ele seleciona o stack
 (`infrastructure` ou `observability`) e o workspace pelo ambiente, e envia o
@@ -67,19 +45,14 @@ O `workflow_dispatch` só aparece no GitHub Actions depois que o arquivo do work
 
 ## Ordem segura
 
-1. inicie a sessão do AWS Academy;
-2. confirme `aws sts get-caller-identity` localmente;
-3. copie as três credenciais temporárias para o workspace;
-4. confirme o ARN atual da `LabRole`;
-5. execute **Actions → Terraform plan → Run workflow**, selecionando `homolog`, ou use a CLI no primeiro bootstrap;
-6. revise VPC, subnets, NAT Gateway, EKS, node group e outputs;
-7. somente depois de aprovação explícita, confirme o apply no HCP Terraform;
-8. copie os outputs de rede para o workspace do banco;
-9. execute o workflow **Deploy** com `deploy_addons = true` para instalar
-   Metrics Server e `nri-bundle`;
-10. execute o workflow **Deploy** com `apply_observability = true` para criar
-    dashboards e alertas;
-11. colete evidências e destrua os recursos ao final.
+1. inicie a sessão do AWS Academy e execute o script central uma vez;
+2. execute **Actions → Terraform plan → Run workflow**, selecionando o ambiente, ou use a CLI no primeiro bootstrap;
+3. revise VPC, subnets, NAT Gateway, EKS, node group e outputs;
+4. somente depois de aprovação explícita, confirme o apply no HCP Terraform;
+5. reexecute o script central para propagar os outputs de rede;
+6. execute o workflow **Deploy** com `deploy_addons = true` para instalar Metrics Server e `nri-bundle`;
+7. execute o workflow **Deploy** com `apply_observability = true` para criar dashboards e alertas;
+8. colete evidências e destrua os recursos ao final.
 
 Nenhum workflow deste repositório executa apply automático por push: o workflow
 `Deploy` é manual, exige flags explícitas por etapa e depende da aprovação do
