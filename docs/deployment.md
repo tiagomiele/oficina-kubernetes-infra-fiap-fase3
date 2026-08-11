@@ -2,8 +2,8 @@
 
 ## Ordem segura
 
-1. iniciar a sessão do AWS Academy e validar `aws sts get-caller-identity`;
-2. atualizar os secrets do GitHub Environment e as variáveis do workspace HCP;
+1. iniciar a sessão do AWS Academy e executar o script central do backend;
+2. confirmar que `aws sts get-caller-identity` foi validado pelo script;
 3. **Terraform plan** da infraestrutura e revisão do plano;
 4. **Deploy** com `apply_infrastructure = true` (rede, EKS, node group, add-ons
    gerenciados);
@@ -30,6 +30,8 @@ Configure *Required reviewers* em ambos os GitHub Environments; sem isso não
 existe gate humano antes do apply.
 
 ## Secrets e variables por GitHub Environment
+
+Todos os itens abaixo são sincronizados pelo script central. Não copie valores manualmente.
 
 Secrets:
 
@@ -88,7 +90,7 @@ sem antes remover o RDS quebra a referência do security group.
 
 | Sintoma | Causa provável | Ação |
 |---|---|---|
-| `ExpiredToken` / `ExpiredTokenException` | sessão do Learner Lab encerrada | reiniciar o lab e atualizar os três secrets AWS e as variáveis do workspace HCP |
+| `ExpiredToken` / `ExpiredTokenException` | sessão do Learner Lab encerrada | reiniciar o lab e reexecutar o script central uma vez |
 | `InvalidClientTokenId` | credenciais trocadas parcialmente | atualizar os três valores juntos |
 | `error: You must be logged in to the server (Unauthorized)` | kubeconfig de outra sessão ou usuário sem acesso ao cluster | reexecutar `aws eks update-kubeconfig` com a sessão atual |
 | Pods do `newrelic` em `CrashLoopBackOff` | license key inválida | recriar o Secret com a chave correta e reexecutar o deploy |

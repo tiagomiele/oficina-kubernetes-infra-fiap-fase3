@@ -70,16 +70,6 @@ variable "private_subnet_cidrs" {
   }
 }
 
-variable "lab_role_arn" {
-  description = "ARN da LabRole preexistente reutilizada pelo cluster e pelos nodes."
-  type        = string
-
-  validation {
-    condition     = can(regex("^arn:aws:iam::[0-9]{12}:role/LabRole$", var.lab_role_arn))
-    error_message = "lab_role_arn deve apontar para arn:aws:iam::<conta>:role/LabRole."
-  }
-}
-
 variable "cluster_version" {
   description = "Versão do Kubernetes disponível no AWS Academy."
   type        = string

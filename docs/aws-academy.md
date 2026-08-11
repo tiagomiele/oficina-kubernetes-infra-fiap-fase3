@@ -6,10 +6,11 @@
 - reutilização obrigatória da `LabRole` quando IAM estiver bloqueado;
 - possível bloqueio de criação de EKS Access Entry;
 - recursos destruídos ou indisponíveis após expiração do laboratório;
-- necessidade de renovar GitHub Environment e HCP Terraform.
+- necessidade de renovar credenciais temporárias em todos os executores.
 
 ## Estratégia
 
+- renovar uma única vez por sessão com o script central, que atualiza AWS CLI, HCP e GitHub;
 - validar `aws sts get-caller-identity` no início da pipeline;
 - reutilizar a `LabRole` para o cluster e o managed node group, sem criar IAM roles;
 - manter Terraform idempotente e reproduzível;

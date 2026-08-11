@@ -155,13 +155,6 @@ terraform validate
 
 ## Monitor sintético
 
-Enquanto o LoadBalancer não existir, mantenha
-`synthetic_monitor_enabled = false`. Depois do deploy da aplicação:
-
-1. obtenha a URL pública do healthcheck (`/actuator/health`);
-2. defina `health_check_url` e `synthetic_monitor_enabled = true` no workspace
-   (ou as variables `HEALTH_CHECK_URL` e `SYNTHETIC_MONITOR_ENABLED` no GitHub
-   Environment);
-3. execute o plan e o apply do workspace de observabilidade.
+Enquanto o LoadBalancer não existir, `synthetic_monitor_enabled` permanece `false`. Depois do deploy da aplicação, reexecute `scripts/configure-environment.ps1` no repositório do backend. O script descobre a URL pública de `/actuator/health`, sincroniza HCP Terraform e GitHub Environment e habilita o monitor. Depois, revise o plan e autorize separadamente o apply do workspace de observabilidade.
 
 Nenhuma URL é presumida ou documentada como verificada antes disso.
