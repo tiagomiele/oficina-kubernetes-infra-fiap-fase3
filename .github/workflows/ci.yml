@@ -76,7 +76,17 @@ jobs:
 
       - name: Terraform init without remote backend
         working-directory: ${{ matrix.directory }}
-        run: terraform init -backend=false -input=false -lockfile=readonly
+        run: |
+          for attempt in 1 2 3; do
+            if terraform init -backend=false -input=false -lockfile=readonly; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Download do provider falhou (tentativa $attempt/3); tentando novamente."
+              sleep $((attempt * 10))
+            fi
+          done
+          exit 1
 
       - name: Terraform validate
         working-directory: ${{ matrix.directory }}

@@ -12,12 +12,26 @@ OUTPUT_DIR="${OUTPUT_DIR:-$(mktemp -d)}"
 # shellcheck disable=SC1091
 source "${ADDONS_DIR}/versions.env"
 
+retry() {
+  local attempt
+  for attempt in 1 2 3; do
+    if "$@"; then
+      return 0
+    fi
+    if [[ "${attempt}" -lt 3 ]]; then
+      echo "Download Helm falhou (tentativa ${attempt}/3); tentando novamente..." >&2
+      sleep $((attempt * 5))
+    fi
+  done
+  return 1
+}
+
 helm repo add metrics-server "${METRICS_SERVER_CHART_REPO}" >/dev/null
 helm repo add newrelic "${NRI_BUNDLE_CHART_REPO}" >/dev/null
-helm repo update metrics-server newrelic >/dev/null
+retry helm repo update metrics-server newrelic >/dev/null
 
 echo "==> helm lint / template do Metrics Server ${METRICS_SERVER_CHART_VERSION}"
-helm template metrics-server metrics-server/metrics-server \
+retry helm template metrics-server metrics-server/metrics-server \
   --version "${METRICS_SERVER_CHART_VERSION}" \
   --namespace kube-system \
   --values "${ADDONS_DIR}/metrics-server.values.yaml" \
@@ -25,7 +39,7 @@ helm template metrics-server metrics-server/metrics-server \
 
 for environment in homolog production; do
   echo "==> helm template do nri-bundle ${NRI_BUNDLE_CHART_VERSION} (${environment})"
-  helm template newrelic-bundle newrelic/nri-bundle \
+  retry helm template newrelic-bundle newrelic/nri-bundle \
     --version "${NRI_BUNDLE_CHART_VERSION}" \
     --namespace newrelic \
     --values "${ADDONS_DIR}/nri-bundle.values.yaml" \
