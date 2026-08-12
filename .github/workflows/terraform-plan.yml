@@ -51,7 +51,7 @@ jobs:
       # As credenciais só existem no GitHub Environment quando o operador as
       # cadastra; no HCP Terraform elas ficam no próprio workspace.
       - name: Validate AWS session
-        if: inputs.stack == 'infrastructure' && secrets.AWS_ACCESS_KEY_ID != ''
+        if: inputs.stack == 'infrastructure'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

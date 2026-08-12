@@ -34,6 +34,14 @@ jobs:
           test -f docs/observability-as-code.md
           test -f docs/deployment.md
 
+      - name: Validate GitHub Actions workflows
+        run: |
+          curl --retry 3 --retry-all-errors -fsSL \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_x86_64.tar.gz \
+            -o /tmp/actionlint.tar.gz
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          /tmp/actionlint
+
       - name: Detect committed secrets
         uses: gitleaks/gitleaks-action@v2
         env:
