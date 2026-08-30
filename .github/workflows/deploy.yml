@@ -1,11 +1,12 @@
 name: Deploy
 
-# Deploy manual e escalonado. Cada etapa exige uma flag explícita e a aprovação
-# do GitHub Environment correspondente (homolog ou production).
-#
+# Merges em homolog/main iniciam todas as etapas automaticamente. O GitHub
+# Environment mantém a aprovação humana; workflow_dispatch serve para recuperação.
 # Ordem segura: infraestrutura -> add-ons do cluster -> observabilidade.
 
 on:
+  push:
+    branches: [homolog, main]
   workflow_dispatch:
     inputs:
       environment:
@@ -36,7 +37,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-${{ inputs.environment }}
+  group: deploy-${{ github.event_name == 'push' && github.ref_name || inputs.environment }}
   cancel-in-progress: false
 
 env:
@@ -46,18 +47,24 @@ env:
 
 jobs:
   guard:
-    name: Pré-requisitos (${{ inputs.environment }})
+    name: Pré-requisitos (${{ github.event_name == 'push' && (github.ref_name == 'main' && 'production' || 'homolog') || inputs.environment }})
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ github.event_name == 'push' && (github.ref_name == 'main' && 'production' || 'homolog') || inputs.environment }}
     outputs:
+      target_environment: ${{ steps.context.outputs.target_environment }}
       cluster_name: ${{ steps.context.outputs.cluster_name }}
+      apply_infrastructure: ${{ steps.context.outputs.apply_infrastructure }}
+      deploy_addons: ${{ steps.context.outputs.deploy_addons }}
+      apply_observability: ${{ steps.context.outputs.apply_observability }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Rejeitar branch incompatível com o ambiente
+        env:
+          TARGET_ENVIRONMENT: ${{ github.event_name == 'push' && (github.ref_name == 'main' && 'production' || 'homolog') || inputs.environment }}
         run: |
           branch="${GITHUB_REF_NAME}"
-          environment="${{ inputs.environment }}"
+          environment="$TARGET_ENVIRONMENT"
           if [ "${environment}" = "production" ] && [ "${branch}" != "main" ]; then
             echo "::error::production só pode ser implantado a partir de main."
             exit 1
@@ -67,7 +74,8 @@ jobs:
             exit 1
           fi
 
-      - name: Exigir ao menos uma etapa habilitada
+      - name: Exigir ao menos uma etapa habilitada na recuperação manual
+        if: github.event_name == 'workflow_dispatch'
         run: |
           if [ "${{ inputs.apply_infrastructure }}" != "true" ] &&
             [ "${{ inputs.deploy_addons }}" != "true" ] &&
@@ -85,20 +93,31 @@ jobs:
 
       - name: Contexto do deploy
         id: context
+        env:
+          TARGET_ENVIRONMENT: ${{ github.event_name == 'push' && (github.ref_name == 'main' && 'production' || 'homolog') || inputs.environment }}
+          APPLY_INFRASTRUCTURE: ${{ github.event_name == 'push' && 'true' || inputs.apply_infrastructure }}
+          DEPLOY_ADDONS: ${{ github.event_name == 'push' && 'true' || inputs.deploy_addons }}
+          APPLY_OBSERVABILITY: ${{ github.event_name == 'push' && 'true' || inputs.apply_observability }}
         run: |
           cluster="${{ vars.CLUSTER_NAME }}"
           if [ -z "${cluster}" ]; then
-            cluster="oficina-${{ inputs.environment }}"
+            cluster="oficina-${TARGET_ENVIRONMENT}"
           fi
-          echo "cluster_name=${cluster}" >>"$GITHUB_OUTPUT"
           {
-            echo "## Deploy ${{ inputs.environment }}"
+            echo "target_environment=${TARGET_ENVIRONMENT}"
+            echo "cluster_name=${cluster}"
+            echo "apply_infrastructure=${APPLY_INFRASTRUCTURE}"
+            echo "deploy_addons=${DEPLOY_ADDONS}"
+            echo "apply_observability=${APPLY_OBSERVABILITY}"
+          } >>"$GITHUB_OUTPUT"
+          {
+            echo "## Deploy ${TARGET_ENVIRONMENT}"
             echo
             echo "| Etapa | Habilitada |"
             echo "|---|---|"
-            echo "| Infraestrutura (EKS) | ${{ inputs.apply_infrastructure }} |"
-            echo "| Add-ons do cluster | ${{ inputs.deploy_addons }} |"
-            echo "| Observabilidade New Relic | ${{ inputs.apply_observability }} |"
+            echo "| Infraestrutura (EKS) | ${APPLY_INFRASTRUCTURE} |"
+            echo "| Add-ons do cluster | ${DEPLOY_ADDONS} |"
+            echo "| Observabilidade New Relic | ${APPLY_OBSERVABILITY} |"
             echo
             echo "- cluster: ${cluster}"
           } >>"$GITHUB_STEP_SUMMARY"
@@ -106,12 +125,12 @@ jobs:
   infrastructure:
     name: Terraform apply da infraestrutura
     needs: guard
-    if: inputs.apply_infrastructure
+    if: needs.guard.outputs.apply_infrastructure == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ needs.guard.outputs.target_environment }}
     env:
       TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
-      TF_WORKSPACE: ${{ inputs.environment == 'homolog' && vars.TF_WORKSPACE_HOMOLOG || vars.TF_WORKSPACE_PRODUCTION }}
+      TF_WORKSPACE: ${{ needs.guard.outputs.target_environment == 'homolog' && vars.TF_WORKSPACE_HOMOLOG || vars.TF_WORKSPACE_PRODUCTION }}
     steps:
       - uses: actions/checkout@v4
 
@@ -149,12 +168,12 @@ jobs:
   addons:
     name: Metrics Server e nri-bundle
     needs: [guard, infrastructure]
-    if: always() && inputs.deploy_addons && needs.guard.result == 'success' && needs.infrastructure.result != 'failure'
+    if: always() && needs.guard.outputs.deploy_addons == 'true' && needs.guard.result == 'success' && needs.infrastructure.result != 'failure'
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ needs.guard.outputs.target_environment }}
     env:
       CLUSTER_NAME: ${{ needs.guard.outputs.cluster_name }}
-      ENVIRONMENT: ${{ inputs.environment }}
+      ENVIRONMENT: ${{ needs.guard.outputs.target_environment }}
       AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
     steps:
       - uses: actions/checkout@v4
@@ -181,7 +200,7 @@ jobs:
           NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
         run: |
           if [ -z "${NEW_RELIC_LICENSE_KEY}" ]; then
-            echo "::error::Secret NEW_RELIC_LICENSE_KEY ausente no GitHub Environment ${{ inputs.environment }}."
+            echo "::error::Secret NEW_RELIC_LICENSE_KEY ausente no GitHub Environment ${{ needs.guard.outputs.target_environment }}."
             exit 1
           fi
 
@@ -204,15 +223,15 @@ jobs:
   observability:
     name: Terraform apply da observabilidade New Relic
     needs: [guard, infrastructure, addons]
-    if: always() && inputs.apply_observability && needs.guard.result == 'success' && needs.infrastructure.result != 'failure' && needs.addons.result != 'failure'
+    if: always() && needs.guard.outputs.apply_observability == 'true' && needs.guard.result == 'success' && needs.infrastructure.result != 'failure' && needs.addons.result != 'failure'
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ needs.guard.outputs.target_environment }}
     env:
       TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
-      TF_WORKSPACE: ${{ inputs.environment == 'homolog' && vars.TF_WORKSPACE_OBSERVABILITY_HOMOLOG || vars.TF_WORKSPACE_OBSERVABILITY_PRODUCTION }}
+      TF_WORKSPACE: ${{ needs.guard.outputs.target_environment == 'homolog' && vars.TF_WORKSPACE_OBSERVABILITY_HOMOLOG || vars.TF_WORKSPACE_OBSERVABILITY_PRODUCTION }}
       TF_VAR_newrelic_api_key: ${{ secrets.NEW_RELIC_API_KEY }}
       TF_VAR_newrelic_account_id: ${{ vars.NEW_RELIC_ACCOUNT_ID }}
-      TF_VAR_environment: ${{ inputs.environment }}
+      TF_VAR_environment: ${{ needs.guard.outputs.target_environment }}
       TF_VAR_cluster_name: ${{ needs.guard.outputs.cluster_name }}
       TF_VAR_health_check_url: ${{ vars.HEALTH_CHECK_URL }}
       TF_VAR_synthetic_monitor_enabled: ${{ vars.SYNTHETIC_MONITOR_ENABLED || 'false' }}

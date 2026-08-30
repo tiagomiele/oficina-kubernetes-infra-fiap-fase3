@@ -16,8 +16,14 @@ apm_application_name       = "oficina-backend-homolog"
 kubernetes_namespace       = "oficina-homolog"
 kubernetes_deployment_name = "oficina-app"
 
-api_gateway_name      = "oficina-homolog-http-api"
-lambda_function_names = ["oficina-homolog-login", "oficina-homolog-authorizer"]
+api_gateway_name       = "oficina-auth-homolog-http-api"
+rds_database_identifier = "oficina-homolog-db"
+lambda_function_names = [
+  "oficina-auth-homolog-login",
+  "oficina-auth-homolog-authorizer",
+  "oficina-auth-homolog-notification-ingress",
+  "oficina-auth-homolog-notification-delivery",
+]
 
 // Preencha somente depois que o LoadBalancer publicar a URL do healthcheck.
 health_check_url          = ""

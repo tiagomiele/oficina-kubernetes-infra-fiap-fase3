@@ -41,19 +41,19 @@ O workflow **Terraform plan** é manual. Ele seleciona o stack
 (`infrastructure` ou `observability`) e o workspace pelo ambiente, e envia o
 plan para execução remota no HCP Terraform.
 
-O `workflow_dispatch` só aparece no GitHub Actions depois que o arquivo do workflow existe na branch padrão `main`. No primeiro bootstrap, promova o workflow até `main` ou execute o plan pela CLI com `TF_CLOUD_ORGANIZATION` e `TF_WORKSPACE`; em ambos os casos, mantenha Auto apply desativado.
+Merges em `homolog` e `main` iniciam o workflow **Deploy** com todas as etapas. Cada
+job usa o GitHub Environment correspondente e aguarda seu gate. `workflow_dispatch`
+permanece para repetir etapas específicas; Auto apply do HCP continua desativado.
 
 ## Ordem segura
 
 1. inicie a sessão do AWS Academy e execute o script central uma vez;
-2. execute **Actions → Terraform plan → Run workflow**, selecionando o ambiente, ou use a CLI no primeiro bootstrap;
-3. revise VPC, subnets, NAT Gateway, EKS, node group e outputs;
-4. somente depois de aprovação explícita, confirme o apply no HCP Terraform;
+2. faça merge na branch do ambiente; o workflow inicia e aguarda aprovação;
+3. revise o plan de VPC, subnets, NAT Gateway, EKS, node group e outputs;
+4. aprove o GitHub Environment para executar infraestrutura, add-ons e observabilidade;
 5. reexecute o script central para propagar os outputs de rede;
-6. execute o workflow **Deploy** com `deploy_addons = true` para instalar Metrics Server e `nri-bundle`;
-7. execute o workflow **Deploy** com `apply_observability = true` para criar dashboards e alertas;
-8. colete evidências e destrua os recursos ao final.
+6. use `workflow_dispatch` apenas quando precisar repetir uma etapa específica;
+7. colete evidências e destrua os recursos ao final.
 
-Nenhum workflow deste repositório executa apply automático por push: o workflow
-`Deploy` é manual, exige flags explícitas por etapa e depende da aprovação do
-GitHub Environment.
+Pull Requests nunca executam apply; merges iniciam o fluxo, mas o gate do ambiente
+continua obrigatório.

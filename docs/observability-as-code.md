@@ -9,8 +9,8 @@ configuração e nenhuma chave é versionada.
 
 | Arquivo | Recursos |
 |---|---|
-| `dashboard.tf` | `newrelic_one_dashboard` com as páginas Negócio, Aplicação, Kubernetes e Serverless/API Gateway |
-| `alerts.tf` | `newrelic_alert_policy` e `newrelic_nrql_alert_condition` (12 condições) |
+| `dashboard.tf` | `newrelic_one_dashboard` com as páginas Negócio, Aplicação, Kubernetes, Serverless/API Gateway e RDS PostgreSQL |
+| `alerts.tf` / `rds-alerts.tf` | política e condições NRQL de aplicação, Kubernetes, serverless, API Gateway e RDS |
 | `synthetics.tf` | `newrelic_synthetics_monitor` do healthcheck e a condição associada |
 | `notifications.tf` | `newrelic_notification_destination`, `newrelic_notification_channel` e `newrelic_workflow` opcionais |
 
@@ -34,7 +34,8 @@ Tudo é condicional:
 | `cluster_name` | saída `eks_cluster_name` da infraestrutura | vazio usa `oficina-<environment>` |
 | `apm_application_name` | nome da aplicação no APM | vazio usa `oficina-backend-<environment>` |
 | `kubernetes_namespace` / `kubernetes_deployment_name` | `oficina-homolog` ou `oficina-production` / `oficina-app` | usados nas consultas de Kubernetes |
-| `lambda_function_names` / `api_gateway_name` | repositório de autenticação | vazio usa `oficina-<environment>-login`, `-authorizer` e `-http-api` |
+| `lambda_function_names` / `api_gateway_name` | repositório de autenticação | a configuração central informa as quatro Lambdas e a HTTP API |
+| `rds_database_identifier` | repositório de banco | vazio usa `oficina-<environment>-db` |
 | `health_check_url` | URL pública do LoadBalancer | vazia desabilita o monitor sintético |
 | `alert_thresholds` | mapa por ambiente | limiares configuráveis |
 | `notification_enabled` / `notification_email` | opcional | workflow de notificação |
@@ -53,6 +54,12 @@ Exemplos completos em `observability/newrelic/environments/*.tfvars.example`.
 | Memória do container (%) | 85 | 80 |
 | Reinícios de container | 3 | 2 |
 | Erros de Lambda | 3 | 2 |
+| Erros 5xx do API Gateway | 3 | 2 |
+| Latência P95 do API Gateway (ms) | 2000 | 1200 |
+| CPU do RDS (%) | 85 | 80 |
+| Conexões do RDS | 70 | 60 |
+| Armazenamento livre do RDS (GiB) | 3 | 5 |
+| Erros PostgreSQL | 3 | 1 |
 | Expiração de telemetria (s) | 1200 | 900 |
 | Duração da violação (s) | 300 | 180 |
 
@@ -101,9 +108,15 @@ Sobrescreva com `alert_thresholds` no workspace quando necessário.
 | Invocações | `SELECT count(*) FROM AwsLambdaInvocation WHERE aws.lambda.functionName IN (...) FACET aws.lambda.functionName` |
 | Duração média e P95 | `SELECT average(duration), percentile(duration, 95) FROM AwsLambdaInvocation ...` |
 | Erros e cold starts | `SELECT filter(count(*), WHERE aws.lambda.coldStart IS true), filter(count(*), WHERE error IS true) FROM AwsLambdaInvocation ...` |
-| Latência do gateway | `SELECT average(aws.apigateway.Latency), average(aws.apigateway.IntegrationLatency) FROM Metric WHERE aws.apigateway.ApiName = '<api>'` |
-| Status do gateway | `SELECT sum(aws.apigateway.Count), sum(aws.apigateway.4XXError), sum(aws.apigateway.5XXError) FROM Metric ...` |
+| Latência do gateway | `SELECT average(numeric(responseLatency)), percentile(numeric(responseLatency), 95), average(numeric(integrationLatency)) FROM Log WHERE logtype = 'api-gateway-access' AND environment = '<env>'` |
+| Status do gateway | `SELECT count(*), filter(count(*), WHERE numeric(status) >= 400 ...), filter(count(*), WHERE numeric(status) >= 500) FROM Log ...` |
 | Erros por função | `SELECT count(*) FROM AwsLambdaInvocationError ... FACET aws.lambda.functionName, errorMessage` |
+
+Os widgets do API Gateway usam os access logs técnicos encaminhados pela Lambda do repositório Auth. O payload é sanitizado por allowlist e não contém headers, tokens ou body; por isso o dashboard não depende de uma integração externa de métricas AWS.
+
+### RDS PostgreSQL
+
+A Lambda agendada do repositório Database publica `OficinaRdsSample` a cada cinco minutos. A página apresenta CPU, conexões, armazenamento e memória livres, latências, IOPS e contagens agregadas de erros/consultas lentas. Nenhum SQL ou texto bruto de log é encaminhado.
 
 ## Mapa das condições de alerta
 
@@ -120,7 +133,12 @@ Sobrescreva com `alert_thresholds` no workspace quando necessário.
 | `memoria_alta` | `memoryWorkingSetUtilization` | `> container_memory_percent` |
 | `hpa_no_maximo` | `desiredReplicas - maxReplicas` em `K8sHpaSample` | `>= 0` por 10 min |
 | `falha_lambda_recorrente` | `count(*)` em `AwsLambdaInvocationError` | `>= lambda_errors` por 10 min |
+| `api_gateway_5xx` / `api_gateway_latencia` | access logs sanitizados em `Log` | limites de 5xx e P95 por ambiente |
+| `rds_cpu_alta` / `rds_conexoes_altas` | `OficinaRdsSample` | acima do limite por ambiente |
+| `rds_armazenamento_baixo` | `OficinaRdsSample.freeStorageBytes` | abaixo do limite em GiB |
+| `rds_erros_postgresql` | última contagem sanitizada | `>= rds_postgres_errors` |
 | `telemetria_ausente` | `count(*)` em `K8sClusterSample` com `expiration_duration` | `< 1` e violação na expiração do sinal |
+| `telemetria RDS ausente` | `count(*)` em `OficinaRdsSample` com `expiration_duration` | abre violação se a coleta agendada parar |
 
 O nome final de cada condição é `oficina-<environment> — <condição>`.
 

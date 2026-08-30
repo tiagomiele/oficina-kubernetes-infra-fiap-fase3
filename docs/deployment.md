@@ -4,19 +4,17 @@
 
 1. iniciar a sessão do AWS Academy e executar o script central do backend;
 2. confirmar que `aws sts get-caller-identity` foi validado pelo script;
-3. **Terraform plan** da infraestrutura e revisão do plano;
-4. **Deploy** com `apply_infrastructure = true` (rede, EKS, node group, add-ons
-   gerenciados);
-5. **Deploy** com `deploy_addons = true` (Metrics Server e `nri-bundle`);
+3. merge em `homolog` ou `main`, que inicia o plan e aguarda aprovação do ambiente;
+4. **Deploy** automático da infraestrutura (rede, EKS, node group e add-ons gerenciados);
+5. **Deploy** automático do Metrics Server e `nri-bundle`;
 6. deploy da aplicação pelo repositório do backend (Deployment, Service, HPA);
-7. **Deploy** com `apply_observability = true` (dashboards, política e
-   condições no New Relic);
+7. **Deploy** automático dos dashboards, política e condições no New Relic;
 8. preencher `health_check_url` e habilitar o monitor sintético;
 9. coletar evidências e executar o destroy ao final da sessão.
 
 O workflow `Deploy` respeita essa ordem: `guard → infrastructure → addons →
-observability`. Cada etapa exige uma flag explícita e a aprovação do GitHub
-Environment.
+observability`. Push em `homolog` ou `main` habilita todas as etapas; o GitHub
+Environment mantém o gate humano. `workflow_dispatch` permite repetir etapas específicas.
 
 ## Ambientes
 

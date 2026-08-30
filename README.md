@@ -41,7 +41,7 @@ Diagrama detalhado da camada de infraestrutura e observabilidade em
 | `kubernetes/addons/` | values dos charts e versões fixadas |
 | `scripts/` | validação de sessão AWS, deploy, verificação e lint offline |
 | `observability/newrelic/` | dashboards, alertas, sintético e notificações |
-| `.github/workflows/` | CI, plan manual e deploy com gates |
+| `.github/workflows/` | CI, plan e deploy automático por merge com gates |
 
 ## Tecnologias
 
@@ -82,14 +82,15 @@ yamllint -c .yamllint.yml kubernetes .github/workflows
 shellcheck scripts/*.sh
 ```
 
-O CI executa essas validações, TFLint, Trivy e Gitleaks. Nenhum workflow
-executa apply automático.
+O CI executa essas validações, TFLint, Trivy e Gitleaks. Pull Requests nunca
+executam apply.
 
 ## Deploy
 
-O workflow manual `Deploy` respeita a ordem infraestrutura → add-ons →
-observabilidade, exige flag explícita por etapa e aprovação do GitHub
-Environment. Detalhes em [Deploy, rollback e troubleshooting](docs/deployment.md).
+Merges em `homolog` e `main` iniciam automaticamente infraestrutura → add-ons →
+observabilidade. Cada ambiente mantém seu gate de aprovação. A execução manual permite
+repetir etapas específicas para recuperação. Detalhes em
+[Deploy, rollback e troubleshooting](docs/deployment.md).
 
 ## Documentação
 
