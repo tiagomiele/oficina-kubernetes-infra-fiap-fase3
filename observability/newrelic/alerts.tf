@@ -100,6 +100,54 @@ locals {
       threshold   = local.thresholds.lambda_errors
       duration    = 600
     }
+
+    api_gateway_5xx = {
+      description = "Respostas 5xx recorrentes no API Gateway."
+      query       = "SELECT filter(count(*), WHERE numeric(status) >= 500) FROM Log WHERE ${local.api_gateway_filter}"
+      operator    = "above_or_equals"
+      threshold   = local.thresholds.api_gateway_5xx_errors
+      duration    = 300
+    }
+
+    api_gateway_latencia = {
+      description = "P95 da latência total do API Gateway acima do limite."
+      query       = "SELECT percentile(numeric(responseLatency), 95) FROM Log WHERE ${local.api_gateway_filter}"
+      operator    = "above"
+      threshold   = local.thresholds.api_gateway_latency_ms
+      duration    = local.thresholds.condition_duration_seconds
+    }
+
+    rds_cpu_alta = {
+      description = "CPU média do RDS acima do limite."
+      query       = "SELECT average(cpuUtilizationPercent) FROM OficinaRdsSample WHERE ${local.rds_filter}"
+      operator    = "above"
+      threshold   = local.thresholds.rds_cpu_percent
+      duration    = local.thresholds.condition_duration_seconds
+    }
+
+    rds_conexoes_altas = {
+      description = "Número médio de conexões do RDS acima do limite."
+      query       = "SELECT average(databaseConnections) FROM OficinaRdsSample WHERE ${local.rds_filter}"
+      operator    = "above"
+      threshold   = local.thresholds.rds_connections
+      duration    = local.thresholds.condition_duration_seconds
+    }
+
+    rds_armazenamento_baixo = {
+      description = "Armazenamento livre do RDS abaixo do limite."
+      query       = "SELECT average(freeStorageBytes) / 1073741824 FROM OficinaRdsSample WHERE ${local.rds_filter}"
+      operator    = "below"
+      threshold   = local.thresholds.rds_free_storage_gib
+      duration    = local.thresholds.condition_duration_seconds
+    }
+
+    rds_erros_postgresql = {
+      description = "Erros PostgreSQL detectados na janela de coleta do RDS."
+      query       = "SELECT latest(postgresErrorCount) FROM OficinaRdsSample WHERE ${local.rds_filter}"
+      operator    = "above_or_equals"
+      threshold   = local.thresholds.rds_postgres_errors
+      duration    = 300
+    }
   }
 }
 

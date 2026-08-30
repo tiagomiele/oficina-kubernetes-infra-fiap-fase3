@@ -86,6 +86,12 @@ variable "api_gateway_name" {
   default     = ""
 }
 
+variable "rds_database_identifier" {
+  description = "Identificador da instância RDS. Vazio usa <project_name>-<environment>-db."
+  type        = string
+  default     = ""
+}
+
 variable "health_check_url" {
   description = "URL pública do healthcheck exposta pelo LoadBalancer. Enquanto vazia, o monitor sintético não é criado."
   type        = string
@@ -126,6 +132,12 @@ variable "alert_thresholds" {
     container_memory_percent     = number
     container_restarts           = number
     lambda_errors                = number
+    api_gateway_5xx_errors       = number
+    api_gateway_latency_ms       = number
+    rds_cpu_percent              = number
+    rds_connections              = number
+    rds_free_storage_gib         = number
+    rds_postgres_errors          = number
     synthetic_failures           = number
     telemetry_expiration_seconds = number
     condition_duration_seconds   = number
@@ -143,6 +155,12 @@ variable "alert_thresholds" {
       container_memory_percent     = 85
       container_restarts           = 3
       lambda_errors                = 3
+      api_gateway_5xx_errors       = 3
+      api_gateway_latency_ms       = 2000
+      rds_cpu_percent              = 85
+      rds_connections              = 70
+      rds_free_storage_gib         = 3
+      rds_postgres_errors          = 3
       synthetic_failures           = 1
       telemetry_expiration_seconds = 1200
       condition_duration_seconds   = 300
@@ -158,6 +176,12 @@ variable "alert_thresholds" {
       container_memory_percent     = 80
       container_restarts           = 2
       lambda_errors                = 2
+      api_gateway_5xx_errors       = 2
+      api_gateway_latency_ms       = 1200
+      rds_cpu_percent              = 80
+      rds_connections              = 60
+      rds_free_storage_gib         = 5
+      rds_postgres_errors          = 1
       synthetic_failures           = 1
       telemetry_expiration_seconds = 900
       condition_duration_seconds   = 180

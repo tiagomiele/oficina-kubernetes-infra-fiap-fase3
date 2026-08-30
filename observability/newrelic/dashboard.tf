@@ -330,7 +330,7 @@ resource "newrelic_one_dashboard" "oficina" {
 
       nrql_query {
         account_id = var.newrelic_account_id
-        query      = "SELECT average(aws.apigateway.Latency) AS 'Latência', average(aws.apigateway.IntegrationLatency) AS 'Integração' FROM Metric WHERE aws.apigateway.ApiName = '${local.api_gateway}' TIMESERIES SINCE 6 hours ago"
+        query      = "SELECT average(numeric(responseLatency)) AS 'Latência', percentile(numeric(responseLatency), 95) AS 'P95', average(numeric(integrationLatency)) AS 'Integração' FROM Log WHERE ${local.api_gateway_filter} TIMESERIES SINCE 6 hours ago"
       }
     }
 
@@ -343,7 +343,7 @@ resource "newrelic_one_dashboard" "oficina" {
 
       nrql_query {
         account_id = var.newrelic_account_id
-        query      = "SELECT sum(aws.apigateway.Count) AS 'Requisições', sum(aws.apigateway.4XXError) AS '4xx', sum(aws.apigateway.5XXError) AS '5xx' FROM Metric WHERE aws.apigateway.ApiName = '${local.api_gateway}' SINCE 6 hours ago"
+        query      = "SELECT count(*) AS 'Requisições', filter(count(*), WHERE numeric(status) >= 400 AND numeric(status) < 500) AS '4xx', filter(count(*), WHERE numeric(status) >= 500) AS '5xx' FROM Log WHERE ${local.api_gateway_filter} SINCE 6 hours ago"
       }
     }
 
@@ -357,6 +357,101 @@ resource "newrelic_one_dashboard" "oficina" {
       nrql_query {
         account_id = var.newrelic_account_id
         query      = "SELECT count(*) FROM AwsLambdaInvocationError WHERE aws.lambda.functionName IN (${local.lambda_filter}) FACET aws.lambda.functionName, errorMessage SINCE 24 hours ago LIMIT 15"
+      }
+    }
+  }
+
+  page {
+    name = "RDS PostgreSQL"
+
+    widget_line {
+      title  = "CPU do RDS (%)"
+      row    = 1
+      column = 1
+      width  = 6
+      height = 3
+
+      nrql_query {
+        account_id = var.newrelic_account_id
+        query      = "SELECT average(cpuUtilizationPercent) FROM OficinaRdsSample WHERE ${local.rds_filter} TIMESERIES SINCE 6 hours ago"
+      }
+    }
+
+    widget_line {
+      title  = "Conexões do banco"
+      row    = 1
+      column = 7
+      width  = 6
+      height = 3
+
+      nrql_query {
+        account_id = var.newrelic_account_id
+        query      = "SELECT average(databaseConnections) FROM OficinaRdsSample WHERE ${local.rds_filter} TIMESERIES SINCE 6 hours ago"
+      }
+    }
+
+    widget_line {
+      title  = "Armazenamento e memória livres (GiB)"
+      row    = 4
+      column = 1
+      width  = 6
+      height = 3
+
+      nrql_query {
+        account_id = var.newrelic_account_id
+        query      = "SELECT average(freeStorageBytes) / 1073741824 AS 'Armazenamento', average(freeableMemoryBytes) / 1073741824 AS 'Memória' FROM OficinaRdsSample WHERE ${local.rds_filter} TIMESERIES SINCE 6 hours ago"
+      }
+    }
+
+    widget_line {
+      title  = "Latência de leitura e escrita (ms)"
+      row    = 4
+      column = 7
+      width  = 6
+      height = 3
+
+      nrql_query {
+        account_id = var.newrelic_account_id
+        query      = "SELECT average(readLatencySeconds) * 1000 AS 'Leitura', average(writeLatencySeconds) * 1000 AS 'Escrita' FROM OficinaRdsSample WHERE ${local.rds_filter} TIMESERIES SINCE 6 hours ago"
+      }
+    }
+
+    widget_line {
+      title  = "IOPS de leitura e escrita"
+      row    = 7
+      column = 1
+      width  = 6
+      height = 3
+
+      nrql_query {
+        account_id = var.newrelic_account_id
+        query      = "SELECT average(readIops) AS 'Leitura', average(writeIops) AS 'Escrita' FROM OficinaRdsSample WHERE ${local.rds_filter} TIMESERIES SINCE 6 hours ago"
+      }
+    }
+
+    widget_billboard {
+      title  = "Erros PostgreSQL agregados (24h)"
+      row    = 7
+      column = 7
+      width  = 3
+      height = 3
+
+      nrql_query {
+        account_id = var.newrelic_account_id
+        query      = "SELECT sum(postgresErrorCount) FROM OficinaRdsSample WHERE ${local.rds_filter} SINCE 24 hours ago"
+      }
+    }
+
+    widget_billboard {
+      title  = "Consultas lentas agregadas (24h)"
+      row    = 7
+      column = 10
+      width  = 3
+      height = 3
+
+      nrql_query {
+        account_id = var.newrelic_account_id
+        query      = "SELECT sum(slowQueryCount) FROM OficinaRdsSample WHERE ${local.rds_filter} SINCE 24 hours ago"
       }
     }
   }
