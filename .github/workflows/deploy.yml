@@ -1,0 +1,398 @@
+name: Deploy
+
+# Merges em homolog iniciam todas as etapas automaticamente. O GitHub Environment
+# mantém a aprovação humana; workflow_dispatch executa homologação novamente e é
+# o único caminho para production e para destruição.
+# Ordem segura de apply: infraestrutura -> add-ons do cluster -> observabilidade.
+# Ordem segura de destroy: observabilidade -> infraestrutura.
+
+on:
+  push:
+    branches: [homolog]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente alvo
+        required: true
+        default: homolog
+        type: choice
+        options:
+          - homolog
+          - production
+      action:
+        description: Operação a executar
+        required: true
+        default: apply
+        type: choice
+        options:
+          - apply
+          - destroy
+      apply_infrastructure:
+        description: Rede e EKS (apply ou destroy, conforme a operação)
+        required: true
+        default: false
+        type: boolean
+      deploy_addons:
+        description: Instalar Metrics Server e nri-bundle no cluster (somente apply)
+        required: true
+        default: false
+        type: boolean
+      apply_observability:
+        description: Dashboards e alertas New Relic (apply ou destroy, conforme a operação)
+        required: true
+        default: false
+        type: boolean
+      confirm:
+        description: Para destroy, digite DESTROY-<ambiente>
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.event_name == 'push' && github.ref_name || inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  AWS_DEFAULT_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+  KUBECTL_VERSION: v1.34.1
+  HELM_VERSION: v3.18.4
+
+jobs:
+  guard:
+    name: Pré-requisitos (${{ github.event_name == 'push' && (github.ref_name == 'main' && 'production' || 'homolog') || inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && (github.ref_name == 'main' && 'production' || 'homolog') || inputs.environment }}
+    outputs:
+      target_environment: ${{ steps.context.outputs.target_environment }}
+      target_action: ${{ steps.context.outputs.target_action }}
+      cluster_name: ${{ steps.context.outputs.cluster_name }}
+      apply_infrastructure: ${{ steps.context.outputs.apply_infrastructure }}
+      deploy_addons: ${{ steps.context.outputs.deploy_addons }}
+      apply_observability: ${{ steps.context.outputs.apply_observability }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rejeitar branch incompatível com o ambiente
+        env:
+          TARGET_ENVIRONMENT: ${{ github.event_name == 'push' && (github.ref_name == 'main' && 'production' || 'homolog') || inputs.environment }}
+        run: |
+          branch="${GITHUB_REF_NAME}"
+          environment="$TARGET_ENVIRONMENT"
+          if [ "${environment}" = "production" ] && [ "${branch}" != "main" ]; then
+            echo "::error::production só pode ser implantado a partir de main."
+            exit 1
+          fi
+          if [ "${environment}" = "homolog" ] && [ "${branch}" != "homolog" ]; then
+            echo "::error::homolog só pode ser implantado a partir de homolog."
+            exit 1
+          fi
+
+      - name: Exigir ao menos uma etapa habilitada na execução manual
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ inputs.apply_infrastructure }}" != "true" ] &&
+            [ "${{ inputs.deploy_addons }}" != "true" ] &&
+            [ "${{ inputs.apply_observability }}" != "true" ]; then
+            echo "::error::Nenhuma etapa habilitada. Marque explicitamente o que deve ser executado."
+            exit 1
+          fi
+
+      - name: Exigir confirmação digitada para destruição
+        if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
+        env:
+          EXPECTED_CONFIRMATION: DESTROY-${{ inputs.environment }}
+          PROVIDED_CONFIRMATION: ${{ inputs.confirm }}
+        run: |
+          if [ "$PROVIDED_CONFIRMATION" != "$EXPECTED_CONFIRMATION" ]; then
+            echo "::error::Confirmação inválida. Era esperado exatamente '$EXPECTED_CONFIRMATION'."
+            exit 1
+          fi
+          if [ "${{ inputs.deploy_addons }}" = "true" ]; then
+            echo "::error::deploy_addons não se aplica a destroy. Os add-ons somem com o cluster."
+            exit 1
+          fi
+
+      - name: Validar sessão AWS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+        run: ./scripts/check-aws-session.sh
+
+      - name: Contexto do deploy
+        id: context
+        env:
+          TARGET_ENVIRONMENT: ${{ github.event_name == 'push' && (github.ref_name == 'main' && 'production' || 'homolog') || inputs.environment }}
+          TARGET_ACTION: ${{ github.event_name == 'push' && 'apply' || inputs.action }}
+          APPLY_INFRASTRUCTURE: ${{ github.event_name == 'push' && 'true' || inputs.apply_infrastructure }}
+          DEPLOY_ADDONS: ${{ github.event_name == 'push' && 'true' || inputs.deploy_addons }}
+          APPLY_OBSERVABILITY: ${{ github.event_name == 'push' && 'true' || inputs.apply_observability }}
+        run: |
+          cluster="${{ vars.CLUSTER_NAME }}"
+          if [ -z "${cluster}" ]; then
+            cluster="oficina-${TARGET_ENVIRONMENT}"
+          fi
+          {
+            echo "target_environment=${TARGET_ENVIRONMENT}"
+            echo "target_action=${TARGET_ACTION}"
+            echo "cluster_name=${cluster}"
+            echo "apply_infrastructure=${APPLY_INFRASTRUCTURE}"
+            echo "deploy_addons=${DEPLOY_ADDONS}"
+            echo "apply_observability=${APPLY_OBSERVABILITY}"
+          } >>"$GITHUB_OUTPUT"
+          {
+            echo "## ${TARGET_ACTION} ${TARGET_ENVIRONMENT}"
+            echo
+            echo "| Etapa | Habilitada |"
+            echo "|---|---|"
+            echo "| Infraestrutura (EKS) | ${APPLY_INFRASTRUCTURE} |"
+            echo "| Add-ons do cluster | ${DEPLOY_ADDONS} |"
+            echo "| Observabilidade New Relic | ${APPLY_OBSERVABILITY} |"
+            echo
+            echo "- cluster: ${cluster}"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  infrastructure:
+    name: Terraform apply da infraestrutura
+    needs: guard
+    if: needs.guard.outputs.target_action == 'apply' && needs.guard.outputs.apply_infrastructure == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.guard.outputs.target_environment }}
+    env:
+      TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
+      TF_WORKSPACE: ${{ needs.guard.outputs.target_environment == 'homolog' && vars.TF_WORKSPACE_HOMOLOG || vars.TF_WORKSPACE_PRODUCTION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Validar workspace
+        run: |
+          test -n "$TF_CLOUD_ORGANIZATION"
+          test -n "$TF_WORKSPACE"
+
+      - name: Terraform init
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Terraform plan
+        run: terraform plan -input=false -no-color
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve -no-color
+
+      - name: Resumo dos outputs
+        run: |
+          {
+            echo "## Infraestrutura aplicada"
+            echo
+            echo '```text'
+            terraform output -no-color eks_cluster_name
+            terraform output -no-color kubectl_config_command
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  addons:
+    name: Metrics Server e nri-bundle
+    needs: [guard, infrastructure]
+    if: always() && needs.guard.outputs.target_action == 'apply' && needs.guard.outputs.deploy_addons == 'true' && needs.guard.result == 'success' && needs.infrastructure.result != 'failure'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.guard.outputs.target_environment }}
+    env:
+      CLUSTER_NAME: ${{ needs.guard.outputs.cluster_name }}
+      ENVIRONMENT: ${{ needs.guard.outputs.target_environment }}
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl compatível com o EKS 1.34
+        uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Validar sessão AWS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+        run: ./scripts/check-aws-session.sh
+
+      - name: Exigir license key
+        env:
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+        run: |
+          if [ -z "${NEW_RELIC_LICENSE_KEY}" ]; then
+            echo "::error::Secret NEW_RELIC_LICENSE_KEY ausente no GitHub Environment ${{ needs.guard.outputs.target_environment }}."
+            exit 1
+          fi
+
+      - name: Deploy dos add-ons
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+        run: ./scripts/deploy-cluster-addons.sh
+
+      - name: Verificar rollout e reportar
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          APP_NAMESPACE: ${{ vars.APP_NAMESPACE || 'oficina' }}
+        run: ./scripts/verify-cluster-addons.sh
+
+  observability:
+    name: Terraform apply da observabilidade New Relic
+    needs: [guard, infrastructure, addons]
+    if: always() && needs.guard.outputs.target_action == 'apply' && needs.guard.outputs.apply_observability == 'true' && needs.guard.result == 'success' && needs.infrastructure.result != 'failure' && needs.addons.result != 'failure'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.guard.outputs.target_environment }}
+    env:
+      TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
+      TF_WORKSPACE: ${{ needs.guard.outputs.target_environment == 'homolog' && vars.TF_WORKSPACE_OBSERVABILITY_HOMOLOG || vars.TF_WORKSPACE_OBSERVABILITY_PRODUCTION }}
+      TF_VAR_newrelic_api_key: ${{ secrets.NEW_RELIC_API_KEY }}
+      TF_VAR_newrelic_account_id: ${{ vars.NEW_RELIC_ACCOUNT_ID }}
+      TF_VAR_environment: ${{ needs.guard.outputs.target_environment }}
+      TF_VAR_cluster_name: ${{ needs.guard.outputs.cluster_name }}
+      TF_VAR_health_check_url: ${{ vars.HEALTH_CHECK_URL }}
+      TF_VAR_synthetic_monitor_enabled: ${{ vars.SYNTHETIC_MONITOR_ENABLED || 'false' }}
+    defaults:
+      run:
+        working-directory: observability/newrelic
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Validar credenciais New Relic
+        run: |
+          test -n "$TF_CLOUD_ORGANIZATION" || {
+            echo "::error::TF_CLOUD_ORGANIZATION não configurada."
+            exit 1
+          }
+          test -n "$TF_WORKSPACE" || {
+            echo "::error::Workspace de observabilidade não configurado."
+            exit 1
+          }
+          if [ -z "$TF_VAR_newrelic_api_key" ] || [ -z "$TF_VAR_newrelic_account_id" ]; then
+            echo "::error::Configure o secret NEW_RELIC_API_KEY e a variable NEW_RELIC_ACCOUNT_ID no GitHub Environment."
+            exit 1
+          fi
+
+      - name: Terraform init
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Terraform plan
+        run: terraform plan -input=false -no-color
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve -no-color
+
+      - name: Resumo da observabilidade
+        run: |
+          {
+            echo "## Observabilidade aplicada"
+            echo
+            echo '```text'
+            terraform output -no-color alert_condition_names
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  observability_destroy:
+    name: Terraform destroy da observabilidade New Relic
+    needs: guard
+    if: needs.guard.outputs.target_action == 'destroy' && needs.guard.outputs.apply_observability == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.guard.outputs.target_environment }}
+    env:
+      TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
+      TF_WORKSPACE: ${{ needs.guard.outputs.target_environment == 'homolog' && vars.TF_WORKSPACE_OBSERVABILITY_HOMOLOG || vars.TF_WORKSPACE_OBSERVABILITY_PRODUCTION }}
+      TF_VAR_newrelic_api_key: ${{ secrets.NEW_RELIC_API_KEY }}
+      TF_VAR_newrelic_account_id: ${{ vars.NEW_RELIC_ACCOUNT_ID }}
+      TF_VAR_environment: ${{ needs.guard.outputs.target_environment }}
+      TF_VAR_cluster_name: ${{ needs.guard.outputs.cluster_name }}
+      TF_VAR_health_check_url: ${{ vars.HEALTH_CHECK_URL }}
+      TF_VAR_synthetic_monitor_enabled: ${{ vars.SYNTHETIC_MONITOR_ENABLED || 'false' }}
+    defaults:
+      run:
+        working-directory: observability/newrelic
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Validar credenciais New Relic
+        run: |
+          test -n "$TF_CLOUD_ORGANIZATION" || {
+            echo "::error::TF_CLOUD_ORGANIZATION não configurada."
+            exit 1
+          }
+          test -n "$TF_WORKSPACE" || {
+            echo "::error::Workspace de observabilidade não configurado."
+            exit 1
+          }
+          if [ -z "$TF_VAR_newrelic_api_key" ] || [ -z "$TF_VAR_newrelic_account_id" ]; then
+            echo "::error::Configure o secret NEW_RELIC_API_KEY e a variable NEW_RELIC_ACCOUNT_ID no GitHub Environment."
+            exit 1
+          fi
+
+      - name: Terraform init
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Terraform plan destroy
+        run: terraform plan -destroy -input=false -no-color
+
+      - name: Terraform destroy
+        run: terraform destroy -input=false -auto-approve -no-color
+
+  infrastructure_destroy:
+    name: Terraform destroy da infraestrutura
+    needs: [guard, observability_destroy]
+    if: always() && needs.guard.outputs.target_action == 'destroy' && needs.guard.outputs.apply_infrastructure == 'true' && needs.guard.result == 'success' && needs.observability_destroy.result != 'failure'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.guard.outputs.target_environment }}
+    env:
+      TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
+      TF_WORKSPACE: ${{ needs.guard.outputs.target_environment == 'homolog' && vars.TF_WORKSPACE_HOMOLOG || vars.TF_WORKSPACE_PRODUCTION }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Validar workspace
+        run: |
+          test -n "$TF_CLOUD_ORGANIZATION"
+          test -n "$TF_WORKSPACE"
+
+      - name: Terraform init
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Terraform plan destroy
+        run: terraform plan -destroy -input=false -no-color
+
+      - name: Terraform destroy
+        run: terraform destroy -input=false -auto-approve -no-color
