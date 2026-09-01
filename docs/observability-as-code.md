@@ -158,7 +158,7 @@ Execução local (somente plan):
 cd observability/newrelic
 export TF_CLOUD_ORGANIZATION=<organização>
 export TF_WORKSPACE=oficina-newrelic-homolog
-terraform init -input=false
+terraform init -input=false -lockfile=readonly
 terraform plan -input=false
 ```
 

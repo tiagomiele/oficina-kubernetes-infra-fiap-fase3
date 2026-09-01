@@ -87,9 +87,10 @@ executam apply.
 
 ## Deploy
 
-Merges em `homolog` e `main` iniciam automaticamente infraestrutura → add-ons →
-observabilidade. Cada ambiente mantém seu gate de aprovação. A execução manual permite
-repetir etapas específicas para recuperação. Detalhes em
+Merges em `homolog` iniciam automaticamente infraestrutura → add-ons → observabilidade.
+Cada ambiente mantém seu gate de aprovação. Como o workflow existe em `main`, a execução
+manual permite repetir homologação, executar produção autorizada ou destruir na ordem
+observabilidade → infraestrutura, com confirmação textual. Detalhes em
 [Deploy, rollback e troubleshooting](docs/deployment.md).
 
 ## Documentação

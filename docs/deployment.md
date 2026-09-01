@@ -4,7 +4,7 @@
 
 1. iniciar a sessão do AWS Academy e executar o script central do backend;
 2. confirmar que `aws sts get-caller-identity` foi validado pelo script;
-3. merge em `homolog` ou `main`, que inicia o plan e aguarda aprovação do ambiente;
+3. merge em `homolog`, que inicia o plan e aguarda aprovação do ambiente, ou execução manual a partir de `main` para `production`;
 4. **Deploy** automático da infraestrutura (rede, EKS, node group e add-ons gerenciados);
 5. **Deploy** automático do Metrics Server e `nri-bundle`;
 6. deploy da aplicação pelo repositório do backend (Deployment, Service, HPA);
@@ -12,9 +12,13 @@
 8. preencher `health_check_url` e habilitar o monitor sintético;
 9. coletar evidências e executar o destroy ao final da sessão.
 
-O workflow `Deploy` respeita essa ordem: `guard → infrastructure → addons →
-observability`. Push em `homolog` ou `main` habilita todas as etapas; o GitHub
-Environment mantém o gate humano. `workflow_dispatch` permite repetir etapas específicas.
+O workflow `Deploy` respeita a ordem de apply `guard → infrastructure → addons →
+observability` e a ordem de destroy `guard → observability_destroy →
+infrastructure_destroy`. Push em `homolog` habilita todas as etapas de homologação; o
+GitHub Environment mantém o gate humano. Como o workflow existe em `main`,
+`workflow_dispatch` permite repetir etapas específicas, executar `production` com
+aprovação explícita ou destruir o ambiente com a confirmação `DESTROY-<ambiente>`.
+O banco e o Auth devem ser destruídos antes da infraestrutura Kubernetes.
 
 ## Ambientes
 
