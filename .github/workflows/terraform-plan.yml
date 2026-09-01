@@ -61,7 +61,7 @@ jobs:
 
       - name: Terraform init
         working-directory: ${{ env.WORKING_DIRECTORY }}
-        run: terraform init -input=false
+        run: terraform init -input=false -lockfile=readonly
 
       - name: Terraform plan
         working-directory: ${{ env.WORKING_DIRECTORY }}

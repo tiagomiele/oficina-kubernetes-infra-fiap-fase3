@@ -41,9 +41,10 @@ O workflow **Terraform plan** é manual. Ele seleciona o stack
 (`infrastructure` ou `observability`) e o workspace pelo ambiente, e envia o
 plan para execução remota no HCP Terraform.
 
-Merges em `homolog` e `main` iniciam o workflow **Deploy** com todas as etapas. Cada
-job usa o GitHub Environment correspondente e aguarda seu gate. `workflow_dispatch`
-permanece para repetir etapas específicas; Auto apply do HCP continua desativado.
+Merges em `homolog` iniciam o workflow **Deploy** com todas as etapas. Cada job usa o
+GitHub Environment correspondente e aguarda seu gate. Como o workflow existe em `main`,
+`workflow_dispatch` permite repetir homologação, executar produção autorizada ou destruir
+observabilidade e infraestrutura; Auto apply do HCP continua desativado.
 
 ## Ordem segura
 
