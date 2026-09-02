@@ -87,11 +87,7 @@ executam apply.
 
 ## Deploy
 
-Merges em `homolog` iniciam automaticamente infraestrutura → add-ons → observabilidade.
-Cada ambiente mantém seu gate de aprovação. Como o workflow existe em `main`, a execução
-manual permite repetir homologação, executar produção autorizada ou destruir na ordem
-observabilidade → infraestrutura, com confirmação textual. Detalhes em
-[Deploy, rollback e troubleshooting](docs/deployment.md).
+Pull Requests para `homolog` ou `main` executam plans de infraestrutura e observabilidade sem apply. Merges em `homolog` iniciam automaticamente infraestrutura → add-ons → observabilidade, sem aprovação manual. Merges em `main` usam uma única aprovação no GitHub Environment `production`. A execução manual permite repetir o deploy completo na branch correspondente durante bootstrap ou recuperação. Destroy permanece manual fora da esteira. Detalhes em [Deploy, rollback e troubleshooting](docs/deployment.md).
 
 ## Documentação
 
