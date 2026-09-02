@@ -37,7 +37,7 @@ Para os workspaces de observabilidade, execute o mesmo script com `-ConfigureNew
 
 O script central cria e atualiza os GitHub Environments `homolog` e `production`, incluindo token HCP, credenciais AWS, workspaces e nomes de cluster. A lista completa está em [Deploy, rollback e troubleshooting](deployment.md).
 
-O workflow **Terraform plan** executa os stacks `infrastructure` e `observability` automaticamente nos Pull Requests que alteram Terraform. Também pode ser iniciado manualmente por ambiente. Os plans usam `homolog` como contexto de configuração, selecionam os workspaces conforme o destino e nunca executam apply.
+O workflow **Terraform plan** executa os stacks `infrastructure` e `observability` automaticamente nos Pull Requests que alteram Terraform. Também pode ser iniciado manualmente por ambiente. Os plans usam `homolog-plan` ou `production-plan`, sem reviewers e sem apply.
 
 Merges em `homolog` iniciam o workflow **Deploy** com infraestrutura, add-ons e observabilidade em um único job sequencial, sem aprovação manual. Merges em `main` usam uma única aprovação no GitHub Environment `production`. O `workflow_dispatch` repete o deploy completo na branch correspondente durante bootstrap ou recuperação. Destroy é manual via Terraform CLI; Auto apply do HCP continua desativado.
 

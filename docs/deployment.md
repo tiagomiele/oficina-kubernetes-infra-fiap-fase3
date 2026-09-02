@@ -20,7 +20,7 @@ O workflow `Deploy` concentra infraestrutura, add-ons e observabilidade em um ú
 | homolog | `homolog` | `homolog` | `TF_WORKSPACE_HOMOLOG`, `TF_WORKSPACE_OBSERVABILITY_HOMOLOG` |
 | production | `main` | `production` | `TF_WORKSPACE_PRODUCTION`, `TF_WORKSPACE_OBSERVABILITY_PRODUCTION` |
 
-O workflow recusa branches diferentes de `homolog` e `main`. Configure *Required reviewers* somente no GitHub Environment `production`; `homolog` não deve possuir reviewers obrigatórios. Os plans usam `homolog` como contexto de configuração e selecionam os workspaces conforme a branch base.
+O workflow recusa branches diferentes de `homolog` e `main`. Configure *Required reviewers* somente no GitHub Environment `production`; `homolog`, `homolog-plan` e `production-plan` não devem possuir reviewers obrigatórios.
 
 ## Secrets e variables por GitHub Environment
 
