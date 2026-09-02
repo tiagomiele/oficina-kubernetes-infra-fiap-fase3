@@ -4,21 +4,14 @@
 
 1. iniciar a sessão do AWS Academy e executar o script central do backend;
 2. confirmar que `aws sts get-caller-identity` foi validado pelo script;
-3. merge em `homolog`, que inicia o plan e aguarda aprovação do ambiente, ou execução manual a partir de `main` para `production`;
-4. **Deploy** automático da infraestrutura (rede, EKS, node group e add-ons gerenciados);
-5. **Deploy** automático do Metrics Server e `nri-bundle`;
-6. deploy da aplicação pelo repositório do backend (Deployment, Service, HPA);
-7. **Deploy** automático dos dashboards, política e condições no New Relic;
-8. preencher `health_check_url` e habilitar o monitor sintético;
-9. coletar evidências e executar o destroy ao final da sessão.
+3. revisar os plans de infraestrutura e observabilidade no Pull Request;
+4. fazer merge em `homolog` para deploy automático, sem aprovação manual;
+5. aplicar automaticamente infraestrutura (rede, EKS e node group), add-ons e observabilidade, nessa ordem;
+6. executar o deploy da aplicação pelo repositório do backend;
+7. preencher `health_check_url` e habilitar o monitor sintético;
+8. coletar evidências e executar o destroy manual quando necessário.
 
-O workflow `Deploy` respeita a ordem de apply `guard → infrastructure → addons →
-observability` e a ordem de destroy `guard → observability_destroy →
-infrastructure_destroy`. Push em `homolog` habilita todas as etapas de homologação; o
-GitHub Environment mantém o gate humano. Como o workflow existe em `main`,
-`workflow_dispatch` permite repetir etapas específicas, executar `production` com
-aprovação explícita ou destruir o ambiente com a confirmação `DESTROY-<ambiente>`.
-O banco e o Auth devem ser destruídos antes da infraestrutura Kubernetes.
+O workflow `Deploy` concentra infraestrutura, add-ons e observabilidade em um único job sequencial. Assim, homologação não possui gate humano e produção usa uma única aprovação no GitHub Environment `production`. O `workflow_dispatch` permite repetir o deploy completo a partir da branch `homolog` ou `main` durante bootstrap ou recuperação. Destroy não faz parte da esteira; o banco e o Auth devem ser destruídos manualmente antes da infraestrutura Kubernetes.
 
 ## Ambientes
 
@@ -27,9 +20,7 @@ O banco e o Auth devem ser destruídos antes da infraestrutura Kubernetes.
 | homolog | `homolog` | `homolog` | `TF_WORKSPACE_HOMOLOG`, `TF_WORKSPACE_OBSERVABILITY_HOMOLOG` |
 | production | `main` | `production` | `TF_WORKSPACE_PRODUCTION`, `TF_WORKSPACE_OBSERVABILITY_PRODUCTION` |
 
-O job `guard` recusa a execução quando a branch não corresponde ao ambiente.
-Configure *Required reviewers* em ambos os GitHub Environments; sem isso não
-existe gate humano antes do apply.
+O workflow recusa branches diferentes de `homolog` e `main`. Configure *Required reviewers* somente no GitHub Environment `production`; `homolog`, `homolog-plan` e `production-plan` não devem possuir reviewers obrigatórios.
 
 ## Secrets e variables por GitHub Environment
 
@@ -56,7 +47,7 @@ Variables:
 | `NEW_RELIC_ACCOUNT_ID` | account id numérico |
 | `AWS_REGION` | opcional, padrão `us-west-2` |
 | `CLUSTER_NAME` | opcional, padrão `oficina-<ambiente>` |
-| `APP_NAMESPACE` | opcional, padrão `oficina` |
+| `APP_NAMESPACE` | opcional, padrão `oficina-<ambiente>` |
 | `HEALTH_CHECK_URL` | URL do healthcheck para o monitor sintético |
 | `SYNTHETIC_MONITOR_ENABLED` | `true` somente após a URL existir |
 
@@ -111,7 +102,7 @@ sem antes remover o RDS quebra a referência do security group.
   homologação;
 - `nri-prometheus`, Pixie, eBPF e operators desativados;
 - retenção de 7 dias nos logs de control plane;
-- destroy obrigatório ao final de cada sessão do laboratório.
+- destroy manual ao final da sessão quando os recursos não precisarem permanecer ativos.
 
 ## Checklist de validação geral
 

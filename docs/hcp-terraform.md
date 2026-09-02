@@ -37,24 +37,17 @@ Para os workspaces de observabilidade, execute o mesmo script com `-ConfigureNew
 
 O script central cria e atualiza os GitHub Environments `homolog` e `production`, incluindo token HCP, credenciais AWS, workspaces e nomes de cluster. A lista completa está em [Deploy, rollback e troubleshooting](deployment.md).
 
-O workflow **Terraform plan** é manual. Ele seleciona o stack
-(`infrastructure` ou `observability`) e o workspace pelo ambiente, e envia o
-plan para execução remota no HCP Terraform.
+O workflow **Terraform plan** executa os stacks `infrastructure` e `observability` automaticamente nos Pull Requests que alteram Terraform. Também pode ser iniciado manualmente por ambiente. Os plans usam `homolog-plan` ou `production-plan`, sem reviewers e sem apply.
 
-Merges em `homolog` iniciam o workflow **Deploy** com todas as etapas. Cada job usa o
-GitHub Environment correspondente e aguarda seu gate. Como o workflow existe em `main`,
-`workflow_dispatch` permite repetir homologação, executar produção autorizada ou destruir
-observabilidade e infraestrutura; Auto apply do HCP continua desativado.
+Merges em `homolog` iniciam o workflow **Deploy** com infraestrutura, add-ons e observabilidade em um único job sequencial, sem aprovação manual. Merges em `main` usam uma única aprovação no GitHub Environment `production`. O `workflow_dispatch` repete o deploy completo na branch correspondente durante bootstrap ou recuperação. Destroy é manual via Terraform CLI; Auto apply do HCP continua desativado.
 
 ## Ordem segura
 
 1. inicie a sessão do AWS Academy e execute o script central uma vez;
-2. faça merge na branch do ambiente; o workflow inicia e aguarda aprovação;
-3. revise o plan de VPC, subnets, NAT Gateway, EKS, node group e outputs;
-4. aprove o GitHub Environment para executar infraestrutura, add-ons e observabilidade;
-5. reexecute o script central para propagar os outputs de rede;
-6. use `workflow_dispatch` apenas quando precisar repetir uma etapa específica;
-7. colete evidências e destrua os recursos ao final.
+2. revise os plans de VPC, subnets, NAT Gateway, EKS, node group e observabilidade no Pull Request;
+3. faça merge em `homolog` para executar automaticamente infraestrutura, add-ons e observabilidade;
+4. reexecute o script central para propagar os outputs de rede;
+5. use `workflow_dispatch` somente para bootstrap ou recuperação;
+6. colete evidências e destrua os recursos manualmente quando necessário.
 
-Pull Requests nunca executam apply; merges iniciam o fluxo, mas o gate do ambiente
-continua obrigatório.
+Pull Requests nunca executam apply. O gate é obrigatório somente no merge em `main`, antes do deploy de produção.

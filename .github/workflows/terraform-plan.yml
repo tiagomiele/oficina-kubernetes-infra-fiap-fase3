@@ -1,40 +1,53 @@
 name: Terraform plan
 
 on:
+  pull_request:
+    branches: [main, homolog]
+    paths:
+      - '.github/workflows/terraform-plan.yml'
+      - 'environments/**'
+      - 'observability/newrelic/**'
+      - '*.tf'
+      - '.terraform.lock.hcl'
   workflow_dispatch:
     inputs:
       environment:
-        description: HCP Terraform workspace environment
+        description: Ambiente HCP Terraform
         required: true
         default: homolog
         type: choice
         options:
           - homolog
           - production
-      stack:
-        description: Configuração a planejar
-        required: true
-        default: infrastructure
-        type: choice
-        options:
-          - infrastructure
-          - observability
+
+concurrency:
+  group: terraform-plan-${{ github.event_name == 'pull_request' && (github.base_ref == 'main' && 'production' || 'homolog') || inputs.environment }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   plan:
-    name: Plan ${{ inputs.stack }} (${{ inputs.environment }})
+    name: Plan ${{ matrix.stack }} (${{ github.event_name == 'pull_request' && (github.base_ref == 'main' && 'production' || 'homolog') || inputs.environment }})
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: ${{ github.event_name == 'pull_request' && (github.base_ref == 'main' && 'production-plan' || 'homolog-plan') || (inputs.environment == 'production' && 'production-plan' || 'homolog-plan') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [infrastructure, observability]
     env:
+      TARGET_ENVIRONMENT: ${{ github.event_name == 'pull_request' && (github.base_ref == 'main' && 'production' || 'homolog') || inputs.environment }}
       TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
       TF_WORKSPACE: >-
-        ${{ inputs.stack == 'observability'
-        && (inputs.environment == 'homolog' && vars.TF_WORKSPACE_OBSERVABILITY_HOMOLOG || vars.TF_WORKSPACE_OBSERVABILITY_PRODUCTION)
-        || (inputs.environment == 'homolog' && vars.TF_WORKSPACE_HOMOLOG || vars.TF_WORKSPACE_PRODUCTION) }}
-      WORKING_DIRECTORY: ${{ inputs.stack == 'observability' && 'observability/newrelic' || '.' }}
+        ${{ matrix.stack == 'observability'
+        && (github.event_name == 'pull_request'
+        && (github.base_ref == 'main' && vars.TF_WORKSPACE_OBSERVABILITY_PRODUCTION || vars.TF_WORKSPACE_OBSERVABILITY_HOMOLOG)
+        || (inputs.environment == 'production' && vars.TF_WORKSPACE_OBSERVABILITY_PRODUCTION || vars.TF_WORKSPACE_OBSERVABILITY_HOMOLOG))
+        || (github.event_name == 'pull_request'
+        && (github.base_ref == 'main' && vars.TF_WORKSPACE_PRODUCTION || vars.TF_WORKSPACE_HOMOLOG)
+        || (inputs.environment == 'production' && vars.TF_WORKSPACE_PRODUCTION || vars.TF_WORKSPACE_HOMOLOG)) }}
+      WORKING_DIRECTORY: ${{ matrix.stack == 'observability' && 'observability/newrelic' || '.' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,19 +58,9 @@ jobs:
 
       - name: Validate HCP configuration
         run: |
-          test -n "$TF_CLOUD_ORGANIZATION"
-          test -n "$TF_WORKSPACE"
-
-      # As credenciais só existem no GitHub Environment quando o operador as
-      # cadastra; no HCP Terraform elas ficam no próprio workspace.
-      - name: Validate AWS session
-        if: inputs.stack == 'infrastructure'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_DEFAULT_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
-        run: ./scripts/check-aws-session.sh
+          set -euo pipefail
+          test -n "$TF_CLOUD_ORGANIZATION" || { echo "::error::TF_CLOUD_ORGANIZATION não configurada no ambiente de plan."; exit 1; }
+          test -n "$TF_WORKSPACE" || { echo "::error::Workspace HCP de $TARGET_ENVIRONMENT não configurado para ${{ matrix.stack }}."; exit 1; }
 
       - name: Terraform init
         working-directory: ${{ env.WORKING_DIRECTORY }}
@@ -70,10 +73,9 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "## Plan"
+            echo "## Plan de ${{ matrix.stack }}"
             echo
-            echo "- stack: ${{ inputs.stack }}"
-            echo "- ambiente: ${{ inputs.environment }}"
-            echo "- workspace: ${TF_WORKSPACE}"
+            echo "- ambiente: ${TARGET_ENVIRONMENT}"
+            echo "- workspace: \`${TF_WORKSPACE}\`"
             echo "- nenhum apply executado"
           } >> "$GITHUB_STEP_SUMMARY"
