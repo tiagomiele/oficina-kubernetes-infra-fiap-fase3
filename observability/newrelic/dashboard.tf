@@ -291,7 +291,7 @@ resource "newrelic_one_dashboard" "oficina" {
 
       nrql_query {
         account_id = var.newrelic_account_id
-        query      = "SELECT count(*) FROM AwsLambdaInvocation WHERE aws.lambda.functionName IN (${local.lambda_filter}) FACET aws.lambda.functionName TIMESERIES SINCE 6 hours ago"
+        query      = "SELECT count(*) FROM Transaction WHERE appName IN (${local.lambda_filter}) AND aws.lambda.arn IS NOT NULL FACET appName TIMESERIES SINCE 6 hours ago"
       }
     }
 
@@ -304,7 +304,7 @@ resource "newrelic_one_dashboard" "oficina" {
 
       nrql_query {
         account_id = var.newrelic_account_id
-        query      = "SELECT average(duration) AS 'Média', percentile(duration, 95) AS 'P95' FROM AwsLambdaInvocation WHERE aws.lambda.functionName IN (${local.lambda_filter}) TIMESERIES SINCE 6 hours ago"
+        query      = "SELECT average(duration) * 1000 AS 'Média', percentile(duration, 95) * 1000 AS 'P95' FROM Transaction WHERE appName IN (${local.lambda_filter}) AND aws.lambda.arn IS NOT NULL TIMESERIES SINCE 6 hours ago"
       }
     }
 
@@ -317,7 +317,7 @@ resource "newrelic_one_dashboard" "oficina" {
 
       nrql_query {
         account_id = var.newrelic_account_id
-        query      = "SELECT filter(count(*), WHERE aws.lambda.coldStart IS true) AS 'Cold starts', filter(count(*), WHERE error IS true) AS 'Erros' FROM AwsLambdaInvocation WHERE aws.lambda.functionName IN (${local.lambda_filter}) TIMESERIES SINCE 6 hours ago"
+        query      = "SELECT filter(count(*), WHERE aws.lambda.coldStart IS true) AS 'Cold starts', filter(count(*), WHERE error IS true) AS 'Erros' FROM Transaction WHERE appName IN (${local.lambda_filter}) AND aws.lambda.arn IS NOT NULL TIMESERIES SINCE 6 hours ago"
       }
     }
 
@@ -356,7 +356,7 @@ resource "newrelic_one_dashboard" "oficina" {
 
       nrql_query {
         account_id = var.newrelic_account_id
-        query      = "SELECT count(*) FROM AwsLambdaInvocationError WHERE aws.lambda.functionName IN (${local.lambda_filter}) FACET aws.lambda.functionName, errorMessage SINCE 24 hours ago LIMIT 15"
+        query      = "SELECT count(*) FROM TransactionError WHERE appName IN (${local.lambda_filter}) FACET appName, error.message SINCE 24 hours ago LIMIT 15"
       }
     }
   }

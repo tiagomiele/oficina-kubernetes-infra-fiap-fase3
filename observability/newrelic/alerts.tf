@@ -95,7 +95,7 @@ locals {
 
     falha_lambda_recorrente = {
       description = "Erros recorrentes nas Lambdas de autenticação."
-      query       = "SELECT count(*) FROM AwsLambdaInvocationError WHERE aws.lambda.functionName IN (${local.lambda_filter})"
+      query       = "SELECT count(*) FROM TransactionError WHERE appName IN (${local.lambda_filter})"
       operator    = "above_or_equals"
       threshold   = local.thresholds.lambda_errors
       duration    = 600
