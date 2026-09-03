@@ -1,0 +1,81 @@
+name: Terraform plan
+
+on:
+  pull_request:
+    branches: [main, homolog]
+    paths:
+      - '.github/workflows/terraform-plan.yml'
+      - 'environments/**'
+      - 'observability/newrelic/**'
+      - '*.tf'
+      - '.terraform.lock.hcl'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente HCP Terraform
+        required: true
+        default: homolog
+        type: choice
+        options:
+          - homolog
+          - production
+
+concurrency:
+  group: terraform-plan-${{ github.event_name == 'pull_request' && (github.base_ref == 'main' && 'production' || 'homolog') || inputs.environment }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Plan ${{ matrix.stack }} (${{ github.event_name == 'pull_request' && (github.base_ref == 'main' && 'production' || 'homolog') || inputs.environment }})
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'pull_request' && (github.base_ref == 'main' && 'production-plan' || 'homolog-plan') || (inputs.environment == 'production' && 'production-plan' || 'homolog-plan') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [infrastructure, observability]
+    env:
+      TARGET_ENVIRONMENT: ${{ github.event_name == 'pull_request' && (github.base_ref == 'main' && 'production' || 'homolog') || inputs.environment }}
+      TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
+      TF_WORKSPACE: >-
+        ${{ matrix.stack == 'observability'
+        && (github.event_name == 'pull_request'
+        && (github.base_ref == 'main' && vars.TF_WORKSPACE_OBSERVABILITY_PRODUCTION || vars.TF_WORKSPACE_OBSERVABILITY_HOMOLOG)
+        || (inputs.environment == 'production' && vars.TF_WORKSPACE_OBSERVABILITY_PRODUCTION || vars.TF_WORKSPACE_OBSERVABILITY_HOMOLOG))
+        || (github.event_name == 'pull_request'
+        && (github.base_ref == 'main' && vars.TF_WORKSPACE_PRODUCTION || vars.TF_WORKSPACE_HOMOLOG)
+        || (inputs.environment == 'production' && vars.TF_WORKSPACE_PRODUCTION || vars.TF_WORKSPACE_HOMOLOG)) }}
+      WORKING_DIRECTORY: ${{ matrix.stack == 'observability' && 'observability/newrelic' || '.' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Validate HCP configuration
+        run: |
+          set -euo pipefail
+          test -n "$TF_CLOUD_ORGANIZATION" || { echo "::error::TF_CLOUD_ORGANIZATION não configurada no ambiente de plan."; exit 1; }
+          test -n "$TF_WORKSPACE" || { echo "::error::Workspace HCP de $TARGET_ENVIRONMENT não configurado para ${{ matrix.stack }}."; exit 1; }
+
+      - name: Terraform init
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Terraform plan
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+        run: terraform plan -input=false -no-color
+
+      - name: Summary
+        run: |
+          {
+            echo "## Plan de ${{ matrix.stack }}"
+            echo
+            echo "- ambiente: ${TARGET_ENVIRONMENT}"
+            echo "- workspace: \`${TF_WORKSPACE}\`"
+            echo "- nenhum apply executado"
+          } >> "$GITHUB_STEP_SUMMARY"
