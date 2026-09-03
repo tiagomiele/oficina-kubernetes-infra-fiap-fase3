@@ -82,8 +82,7 @@ yamllint -c .yamllint.yml kubernetes .github/workflows
 shellcheck scripts/*.sh
 ```
 
-O CI executa essas validações, TFLint, Trivy e Gitleaks. Pull Requests nunca
-executam apply.
+O CI executa essas validações, TFLint, Trivy e Gitleaks em quatro jobs sequenciais: validação do repositório → Terraform da infraestrutura → Terraform da observabilidade → add-ons Kubernetes. Pull Requests nunca executam apply.
 
 ## Deploy
 
