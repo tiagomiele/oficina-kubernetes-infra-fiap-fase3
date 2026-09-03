@@ -39,7 +39,7 @@ O script central cria e atualiza os GitHub Environments `homolog` e `production`
 
 O workflow **Terraform plan** executa os stacks `infrastructure` e `observability` automaticamente nos Pull Requests que alteram Terraform. Também pode ser iniciado manualmente por ambiente. Os plans usam `homolog-plan` ou `production-plan`, sem reviewers e sem apply.
 
-Merges em `homolog` iniciam o workflow **Deploy** com infraestrutura, add-ons e observabilidade em um único job sequencial, sem aprovação manual. Merges em `main` usam uma única aprovação no GitHub Environment `production`. O `workflow_dispatch` repete o deploy completo na branch correspondente durante bootstrap ou recuperação. Destroy é manual via Terraform CLI; Auto apply do HCP continua desativado.
+Merges em `homolog` iniciam o workflow **Deploy** em jobs sequenciais de validação, infraestrutura, add-ons, observabilidade e resumo, sem aprovação manual. As dependências `needs` exibem o progresso da esquerda para a direita no gráfico e impedem uma fase de iniciar antes da anterior. Merges em `main` preservam um único job e uma única aprovação no GitHub Environment `production`. O `workflow_dispatch` repete o deploy completo na branch correspondente durante bootstrap ou recuperação. Destroy é manual via Terraform CLI; Auto apply do HCP continua desativado.
 
 ## Ordem segura
 
