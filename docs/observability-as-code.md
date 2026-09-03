@@ -105,14 +105,14 @@ Sobrescreva com `alert_thresholds` no workspace quando necessário.
 
 | Widget | NRQL |
 |---|---|
-| Invocações | `SELECT count(*) FROM AwsLambdaInvocation WHERE aws.lambda.functionName IN (...) FACET aws.lambda.functionName` |
-| Duração média e P95 | `SELECT average(duration), percentile(duration, 95) FROM AwsLambdaInvocation ...` |
-| Erros e cold starts | `SELECT filter(count(*), WHERE aws.lambda.coldStart IS true), filter(count(*), WHERE error IS true) FROM AwsLambdaInvocation ...` |
+| Invocações | `SELECT count(*) FROM Transaction WHERE appName IN (...) AND aws.lambda.arn IS NOT NULL FACET appName` |
+| Duração média e P95 | `SELECT average(duration) * 1000, percentile(duration, 95) * 1000 FROM Transaction ...` |
+| Erros e cold starts | `SELECT filter(count(*), WHERE aws.lambda.coldStart IS true), filter(count(*), WHERE error IS true) FROM Transaction ...` |
 | Latência do gateway | `SELECT average(numeric(responseLatency)), percentile(numeric(responseLatency), 95), average(numeric(integrationLatency)) FROM Log WHERE logtype = 'api-gateway-access' AND environment = '<env>'` |
 | Status do gateway | `SELECT count(*), filter(count(*), WHERE numeric(status) >= 400 ...), filter(count(*), WHERE numeric(status) >= 500) FROM Log ...` |
-| Erros por função | `SELECT count(*) FROM AwsLambdaInvocationError ... FACET aws.lambda.functionName, errorMessage` |
+| Erros por função | `SELECT count(*) FROM TransactionError ... FACET appName, error.message` |
 
-Os widgets do API Gateway usam os access logs técnicos encaminhados pela Lambda do repositório Auth. O payload é sanitizado por allowlist e não contém headers, tokens ou body; por isso o dashboard não depende de uma integração externa de métricas AWS.
+As Lambdas Java usam o modo APM serverless atual do agente New Relic, que publica invocações como `Transaction` e falhas como `TransactionError`. Os widgets do API Gateway usam os access logs técnicos encaminhados pela Lambda do repositório Auth. O payload é sanitizado por allowlist e não contém headers, tokens ou body; por isso o dashboard não depende de uma integração externa de métricas AWS.
 
 ### RDS PostgreSQL
 
@@ -132,7 +132,7 @@ A Lambda agendada do repositório Database publica `OficinaRdsSample` a cada cin
 | `cpu_alta` | `cpuUsedCores / cpuLimitCores * 100` | `> container_cpu_percent` |
 | `memoria_alta` | `memoryWorkingSetUtilization` | `> container_memory_percent` |
 | `hpa_no_maximo` | `desiredReplicas - maxReplicas` em `K8sHpaSample` | `>= 0` por 10 min |
-| `falha_lambda_recorrente` | `count(*)` em `AwsLambdaInvocationError` | `>= lambda_errors` por 10 min |
+| `falha_lambda_recorrente` | `count(*)` em `TransactionError` filtrado pelas aplicações Lambda | `>= lambda_errors` por 10 min |
 | `api_gateway_5xx` / `api_gateway_latencia` | access logs sanitizados em `Log` | limites de 5xx e P95 por ambiente |
 | `rds_cpu_alta` / `rds_conexoes_altas` | `OficinaRdsSample` | acima do limite por ambiente |
 | `rds_armazenamento_baixo` | `OficinaRdsSample.freeStorageBytes` | abaixo do limite em GiB |
