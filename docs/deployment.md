@@ -11,7 +11,15 @@
 7. preencher `health_check_url` e habilitar o monitor sintético;
 8. coletar evidências e executar o destroy manual quando necessário.
 
-O workflow `Deploy` concentra infraestrutura, add-ons e observabilidade em um único job sequencial. Assim, homologação não possui gate humano e produção usa uma única aprovação no GitHub Environment `production`. O `workflow_dispatch` permite repetir o deploy completo a partir da branch `homolog` ou `main` durante bootstrap ou recuperação. Destroy não faz parte da esteira; o banco e o Auth devem ser destruídos manualmente antes da infraestrutura Kubernetes.
+O workflow `Deploy` exibe homologação em cinco jobs sequenciais: validação, infraestrutura, add-ons, observabilidade e resumo. Cada job depende explicitamente do anterior, deixando visível no gráfico o progresso completo e bloqueando as fases seguintes quando ocorre uma falha. Produção permanece em um único job para preservar uma única aprovação no GitHub Environment `production`. O `workflow_dispatch` permite repetir o deploy completo a partir da branch `homolog` ou `main` durante bootstrap ou recuperação. Destroy não faz parte da esteira; o banco e o Auth devem ser destruídos manualmente antes da infraestrutura Kubernetes.
+
+```text
+Validate configuration and AWS
+  → Terraform infrastructure
+    → Kubernetes add-ons
+      → Terraform observability
+        → Deployment summary
+```
 
 ## Ambientes
 
