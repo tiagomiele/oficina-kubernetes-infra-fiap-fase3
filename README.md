@@ -86,7 +86,7 @@ O CI executa essas validações, TFLint, Trivy e Gitleaks em quatro jobs sequenc
 
 ## Deploy
 
-Pull Requests para `homolog` ou `main` executam plans de infraestrutura e observabilidade sem apply. Merges em `homolog` exibem jobs sequenciais de validação → infraestrutura → add-ons → observabilidade → resumo, sem aprovação manual. Merges em `main` preservam um único job e uma única aprovação no GitHub Environment `production`. A execução manual permite repetir o deploy completo na branch correspondente durante bootstrap ou recuperação. Destroy permanece manual fora da esteira. Detalhes em [Deploy, rollback e troubleshooting](docs/deployment.md).
+Pull Requests para `homolog` ou `main` executam plans de infraestrutura e observabilidade sem apply. O workflow **Deploy homolog** exibe jobs sequenciais de validação → infraestrutura → add-ons → observabilidade → resumo, sem aprovação manual. O workflow independente **Deploy production** preserva um único job e uma única aprovação no GitHub Environment `production`. A separação evita exibir jobs ignorados do outro ambiente. A execução manual permite repetir o deploy completo no workflow e na branch correspondentes durante bootstrap ou recuperação. Destroy permanece manual fora da esteira. Detalhes em [Deploy, rollback e troubleshooting](docs/deployment.md).
 
 ## Documentação
 
